@@ -138,8 +138,25 @@ func TestVectors(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !bytes.Equal(kemRecipientBytes, privKeyBytes) {
+			// X25519 serialized keys must be clamped, so the bytes might not match.
+			if !bytes.Equal(kemRecipientBytes, privKeyBytes) && vector.KEM != 0x0020 {
 				t.Errorf("unexpected KEM bytes: got %x, want %x", kemRecipientBytes, privKeyBytes)
+			}
+			if vector.KEM == 0x0020 {
+				kem2, err := NewKEMRecipient(vector.KEM, kemRecipientBytes)
+				if err != nil {
+					t.Fatal(err)
+				}
+				kemRecipientBytes2, err := kem2.Bytes()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if !bytes.Equal(kemRecipientBytes2, kemRecipientBytes) {
+					t.Errorf("X25519 re-serialized key differs: got %x, want %x", kemRecipientBytes2, kemRecipientBytes)
+				}
+				if !bytes.Equal(kem2.KEMSender().Bytes(), pubKeyBytes) {
+					t.Errorf("X25519 re-derived public key differs: got %x, want %x", kem2.KEMSender().Bytes(), pubKeyBytes)
+				}
 			}
 			if !bytes.Equal(kemRecipient.KEMSender().Bytes(), pubKeyBytes) {
 				t.Errorf("unexpected KEM sender bytes: got %x, want %x", kemRecipient.KEMSender().Bytes(), pubKeyBytes)

@@ -8,11 +8,17 @@ import (
 )
 
 type KEMSender interface {
+	// ID returns the HPKE KEM identifier.
 	ID() uint16
+
+	// Bytes returns the public key as the output of SerializePublicKey.
 	Bytes() []byte
+
 	encap() (sharedSecret, enc []byte, err error)
 }
 
+// NewKEMSender implements DeserializePublicKey and returns a KEMSender
+// for the given KEM ID and public key bytes.
 func NewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	switch id {
 	case 0x0010: // DHKEM(P-256, HKDF-SHA256)
@@ -44,13 +50,24 @@ func NewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	}
 }
 
-type KEMRecipient interface { // todo: add bytes and kemsender
+type KEMRecipient interface {
+	// ID returns the HPKE KEM identifier.
 	ID() uint16
+
+	// Bytes returns the private key as the output of SerializePrivateKey.
+	//
+	// Note that for X25519 this might not match the input to NewPrivateKey.
+	// This is a requirement of RFC 9180, Section 7.1.2.
 	Bytes() ([]byte, error)
+
+	// KEMSender returns the corresponding KEMSender for this recipient.
 	KEMSender() KEMSender
+
 	decap(enc []byte) (sharedSecret []byte, err error)
 }
 
+// NewKEMRecipient implements DeserializePrivateKey and returns a KEMRecipient
+// for the given KEM ID and private key bytes.
 func NewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 	switch id {
 	case 0x0010: // DHKEM(P-256, HKDF-SHA256)
@@ -82,9 +99,11 @@ func NewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 	}
 }
 
+// NewKEMRecipientFromSeed implements DeriveKeyPair and returns a KEMRecipient
+// for the given KEM ID and private key seed.
 func NewKEMRecipientFromSeed(id uint16, priv []byte) (KEMRecipient, error) {
 	// DeriveKeyPair from RFC 9180 Section 7.1.3.
-	panic("not implemented")
+	panic("not implemented") // TODO
 }
 
 type dhKEM struct {
@@ -217,6 +236,22 @@ func DHKEMRecipient(priv *ecdh.PrivateKey) (KEMRecipient, error) {
 }
 
 func (dh *dhKEMRecipient) Bytes() ([]byte, error) {
+	// Bizarrely, RFC 9180, Section 7.1.2 says SerializePrivateKey MUST clamp
+	// the output, which I thought we all agreed to instead do as part of the DH
+	// function, letting private keys be random bytes.
+	//
+	// At the same time, DeserializePrivateKey MUST also clamp, implying
+	// that the input doesn't have to be clamped, so Bytes by spec doesn't
+	// necessarily match the NewPrivateKey input.
+	//
+	// Sigh.
+	if dh.id == 0x0020 { // X25519
+		b := dh.priv.Bytes()
+		b[0] &= 248
+		b[31] &= 127
+		b[31] |= 64
+		return b, nil
+	}
 	return dh.priv.Bytes(), nil
 }
 
