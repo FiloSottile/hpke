@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"os"
 	"testing"
+
+	"filippo.io/mlkem768"
 )
 
 func mustDecodeHex(t *testing.T, in string) []byte {
@@ -24,18 +26,30 @@ func mustDecodeHex(t *testing.T, in string) []byte {
 }
 
 func TestVectors(t *testing.T) {
-	vectorsJSON, err := os.ReadFile("testdata/rfc9180.json")
-	if err != nil {
-		t.Fatal(err)
-	}
+	t.Run("RFC9180", func(t *testing.T) {
+		vectorsJSON, err := os.ReadFile("testdata/rfc9180.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		testVectors(t, vectorsJSON)
+	})
+	t.Run("hpke-pq", func(t *testing.T) {
+		vectorsJSON, err := os.ReadFile("testdata/hpke-pq.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		testVectors(t, vectorsJSON)
+	})
+}
 
+func testVectors(t *testing.T, vectorsJSON []byte) {
 	var vectors []struct {
 		Mode        uint16 `json:"mode"`
 		KEM         uint16 `json:"kem_id"`
 		KDF         uint16 `json:"kdf_id"`
 		AEAD        uint16 `json:"aead_id"`
 		Info        string `json:"info"`
-		SkEm        string `json:"skEm"`
+		IkmE        string `json:"ikmE"`
 		IkmR        string `json:"ikmR"`
 		SkRm        string `json:"skRm"`
 		PkRm        string `json:"pkRm"`
@@ -83,7 +97,7 @@ func TestVectors(t *testing.T) {
 			}
 
 			pubKeyBytes := mustDecodeHex(t, vector.PkRm)
-			kemSender, err := NewKEMSender(vector.KEM, pubKeyBytes)
+			kemSender, err := UnstableNewKEMSender(vector.KEM, pubKeyBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -94,26 +108,8 @@ func TestVectors(t *testing.T) {
 				t.Errorf("unexpected KEM bytes: got %x, want %x", kemSender.Bytes(), pubKeyBytes)
 			}
 
-			var curve ecdh.Curve
-			switch vector.KEM {
-			case 0x0010:
-				curve = ecdh.P256()
-			case 0x0011:
-				curve = ecdh.P384()
-			case 0x0012:
-				curve = ecdh.P521()
-			case 0x0020:
-				curve = ecdh.X25519()
-			default:
-				t.Fatalf("unsupported KEM %04x", vector.KEM)
-			}
-			skE := mustDecodeHex(t, vector.SkEm)
-			k, err := curve.NewPrivateKey(skE)
-			if err != nil {
-				t.Fatal(err)
-			}
-			testingOnlyGenerateKey = func() *ecdh.PrivateKey { return k }
-			t.Cleanup(func() { testingOnlyGenerateKey = nil })
+			ikmE := mustDecodeHex(t, vector.IkmE)
+			setupDerandomizedEncap(t, vector.KEM, ikmE, kemSender)
 
 			info := mustDecodeHex(t, vector.Info)
 			encap, sender, err := NewSender(kemSender, kdf, aead, info)
@@ -127,7 +123,7 @@ func TestVectors(t *testing.T) {
 			}
 
 			privKeyBytes := mustDecodeHex(t, vector.SkRm)
-			kemRecipient, err := NewKEMRecipient(vector.KEM, privKeyBytes)
+			kemRecipient, err := UnstableNewKEMRecipient(vector.KEM, privKeyBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -163,7 +159,7 @@ func TestVectors(t *testing.T) {
 			}
 
 			seed := mustDecodeHex(t, vector.IkmR)
-			seedRecipient, err := NewKEMRecipientFromSeed(vector.KEM, seed)
+			seedRecipient, err := UnstableNewKEMRecipientFromSeed(vector.KEM, seed)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -230,6 +226,64 @@ func TestVectors(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KEMSender) {
+	switch kemID {
+	case 0x0010, 0x0011, 0x0012, 0x0020:
+		r, err := NewKEMRecipientFromSeed(kemID, randBytes)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
+			return r.(*dhKEMRecipient).priv
+		}
+		t.Cleanup(func() {
+			testingOnlyGenerateKey = nil
+		})
+	case 0x0050: // QSF-P256-MLKEM768-SHAKE256-SHA3256
+		pqRand, tRand := randBytes[:32], randBytes[32:]
+		k, err := ecdh.P256().NewPrivateKey(reduceScalar(tRand, p256Order))
+		if err != nil {
+			t.Fatal(err)
+		}
+		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
+			return k
+		}
+		testingOnlyEncapsulate = func() ([]byte, []byte) {
+			ct, ss, err := mlkem768.EncapsulateDerand(kem.(*qsfSender).pq.Bytes(), pqRand)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ss, ct
+		}
+		t.Cleanup(func() {
+			testingOnlyGenerateKey = nil
+			testingOnlyEncapsulate = nil
+		})
+	case 0x647a: // QSF-X25519-MLKEM768-SHAKE256-SHA3256
+		pqRand, tRand := randBytes[:32], randBytes[32:]
+		k, err := ecdh.X25519().NewPrivateKey(tRand)
+		if err != nil {
+			t.Fatal(err)
+		}
+		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
+			return k
+		}
+		testingOnlyEncapsulate = func() ([]byte, []byte) {
+			ct, ss, err := mlkem768.EncapsulateDerand(kem.(*qsfSender).pq.Bytes(), pqRand)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ss, ct
+		}
+		t.Cleanup(func() {
+			testingOnlyGenerateKey = nil
+			testingOnlyEncapsulate = nil
+		})
+	default:
+		t.Fatalf("unsupported KEM %04x", kemID)
 	}
 }
 

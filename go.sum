@@ -1,3 +1,7 @@
+filippo.io/bigmod v0.1.0 h1:UNzDk7y9ADKST+axd9skUpBQeW7fG2KrTZyOE4uGQy8=
+filippo.io/bigmod v0.1.0/go.mod h1:OjOXDNlClLblvXdwgFFOQFJEocLhhtai8vGLy0JCZlI=
+filippo.io/mlkem768 v0.0.0-20250818110517-29047ffe79fb h1:9eVxcquiUiJn/f8DtnqmsN/8Asqw+h9b1+sM3T/Wl44=
+filippo.io/mlkem768 v0.0.0-20250818110517-29047ffe79fb/go.mod h1:ncYN/Z4GaQBV6TIbmQ7+lIaI+qGXCmZr88zrXHneVHs=
 golang.org/x/crypto v0.41.0 h1:WKYxWedPGCTVVl5+WHSSrOBT0O8lx32+zxmHxijgXp4=
 golang.org/x/crypto v0.41.0/go.mod h1:pO5AFd7FA68rFak7rOAGVuygIISepHftHnr8dr6+sUc=
 golang.org/x/sys v0.35.0 h1:vz1N37gP5bs89s7He8XuIYXpyY0+QlsKmzipCbUtyxI=
