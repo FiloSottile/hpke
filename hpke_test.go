@@ -36,7 +36,7 @@ func TestVectors(t *testing.T) {
 		AEAD        uint16 `json:"aead_id"`
 		Info        string `json:"info"`
 		SkEm        string `json:"skEm"`
-		IkmR        string `json:"ikmR"` // TODO: test DeriveKeyPair
+		IkmR        string `json:"ikmR"`
 		SkRm        string `json:"skRm"`
 		PkRm        string `json:"pkRm"`
 		Enc         string `json:"enc"`
@@ -160,6 +160,22 @@ func TestVectors(t *testing.T) {
 			}
 			if !bytes.Equal(kemRecipient.KEMSender().Bytes(), pubKeyBytes) {
 				t.Errorf("unexpected KEM sender bytes: got %x, want %x", kemRecipient.KEMSender().Bytes(), pubKeyBytes)
+			}
+
+			seed := mustDecodeHex(t, vector.IkmR)
+			seedRecipient, err := NewKEMRecipientFromSeed(vector.KEM, seed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			seedRecipientBytes, err := seedRecipient.Bytes()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(seedRecipientBytes, privKeyBytes) && vector.KEM != 0x0020 {
+				t.Errorf("unexpected KEM bytes from seed: got %x, want %x", seedRecipientBytes, privKeyBytes)
+			}
+			if !bytes.Equal(seedRecipient.KEMSender().Bytes(), pubKeyBytes) {
+				t.Errorf("unexpected KEM sender bytes from seed: got %x, want %x", seedRecipient.KEMSender().Bytes(), pubKeyBytes)
 			}
 
 			recipient, err := NewRecipient(encap, kemRecipient, kdf, aead, info)

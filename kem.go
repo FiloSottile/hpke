@@ -101,9 +101,60 @@ func NewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 
 // NewKEMRecipientFromSeed implements DeriveKeyPair and returns a KEMRecipient
 // for the given KEM ID and private key seed.
-func NewKEMRecipientFromSeed(id uint16, priv []byte) (KEMRecipient, error) {
+func NewKEMRecipientFromSeed(id uint16, seed []byte) (KEMRecipient, error) {
 	// DeriveKeyPair from RFC 9180 Section 7.1.3.
-	panic("not implemented") // TODO
+	var curve ecdh.Curve
+	var dh dhKEM
+	var Nsk uint16
+	switch id {
+	case 0x0010: // DHKEM(P-256, HKDF-SHA256)
+		curve = ecdh.P256()
+		dh, _ = dhKEMForCurve(curve)
+		Nsk = 32
+	case 0x0011: // DHKEM(P-384, HKDF-SHA384)
+		curve = ecdh.P384()
+		dh, _ = dhKEMForCurve(curve)
+		Nsk = 48
+	case 0x0012: // DHKEM(P-521, HKDF-SHA512)
+		curve = ecdh.P521()
+		dh, _ = dhKEMForCurve(curve)
+		Nsk = 66
+	case 0x0020: // DHKEM(X25519, HKDF-SHA256)
+		curve = ecdh.X25519()
+		dh, _ = dhKEMForCurve(curve)
+		Nsk = 32
+	default:
+		return nil, errors.New("unsupported KEM")
+	}
+	suiteID := binary.BigEndian.AppendUint16([]byte("KEM"), dh.id)
+	prk, err := dh.kdf.labeledExtract(suiteID, nil, "dkp_prk", seed)
+	if err != nil {
+		return nil, err
+	}
+	if id == 0x0020 { // X25519
+		s, err := dh.kdf.labeledExpand(suiteID, prk, "sk", nil, Nsk)
+		if err != nil {
+			return nil, err
+		}
+		return NewKEMRecipient(id, s)
+	}
+	var counter uint8
+	for counter < 4 {
+		s, err := dh.kdf.labeledExpand(suiteID, prk, "candidate", []byte{counter}, Nsk)
+		if err != nil {
+			return nil, err
+		}
+		if id == 0x0012 { // P-521
+			s[0] &= 0x01
+		}
+		r, err := NewKEMRecipient(id, s)
+		if err != nil {
+			counter++
+			continue
+		}
+		return r, nil
+	}
+	panic("chance of four rejections is < 2^-128")
 }
 
 type dhKEM struct {
