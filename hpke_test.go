@@ -230,6 +230,10 @@ func testVectors(t *testing.T, vectorsJSON []byte) {
 }
 
 func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KEMSender) {
+	t.Cleanup(func() {
+		testingOnlyGenerateKey = nil
+		testingOnlyEncapsulate = nil
+	})
 	switch kemID {
 	case 0x0010, 0x0011, 0x0012, 0x0020:
 		r, err := NewKEMRecipientFromSeed(kemID, randBytes)
@@ -239,9 +243,20 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
 			return r.(*dhKEMRecipient).priv
 		}
-		t.Cleanup(func() {
-			testingOnlyGenerateKey = nil
-		})
+	case 0x0041: // ML-KEM-768
+		testingOnlyEncapsulate = func() ([]byte, []byte) {
+			ct, ss, err := mlkem768.EncapsulateDerand(kem.(*mlkemSender).pq.Bytes(), randBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ss, ct
+		}
+	case 0x0042: // ML-KEM-1024
+		testingOnlyEncapsulate = func() ([]byte, []byte) {
+			_ = randBytes
+			t.Skip("ML-KEM-1024 EncapsulateDerand not implemented") // TODO
+			return nil, nil
+		}
 	case 0x0050: // QSF-P256-MLKEM768-SHAKE256-SHA3256
 		pqRand, tRand := randBytes[:32], randBytes[32:]
 		k, err := ecdh.P256().NewPrivateKey(reduceScalar(tRand, p256Order))
@@ -258,10 +273,20 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			}
 			return ss, ct
 		}
-		t.Cleanup(func() {
-			testingOnlyGenerateKey = nil
-			testingOnlyEncapsulate = nil
-		})
+	case 0x0051: // QSF-P384-MLKEM1024-SHAKE256-SHA3256
+		pqRand, tRand := randBytes[:32], randBytes[32:]
+		k, err := ecdh.P384().NewPrivateKey(reduceScalar(tRand, p384Order))
+		if err != nil {
+			t.Fatal(err)
+		}
+		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
+			return k
+		}
+		testingOnlyEncapsulate = func() ([]byte, []byte) {
+			_ = pqRand
+			t.Skip("ML-KEM-1024 EncapsulateDerand not implemented") // TODO
+			return nil, nil
+		}
 	case 0x647a: // QSF-X25519-MLKEM768-SHAKE256-SHA3256
 		pqRand, tRand := randBytes[:32], randBytes[32:]
 		k, err := ecdh.X25519().NewPrivateKey(tRand)
@@ -278,10 +303,6 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			}
 			return ss, ct
 		}
-		t.Cleanup(func() {
-			testingOnlyGenerateKey = nil
-			testingOnlyEncapsulate = nil
-		})
 	default:
 		t.Fatalf("unsupported KEM %04x", kemID)
 	}

@@ -13,6 +13,27 @@ import (
 
 func UnstableNewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	switch id {
+	case 0x0041: // ML-KEM-768
+		if len(pub) != mlkem.EncapsulationKeySize768 {
+			return nil, errors.New("invalid public key size")
+		}
+		pq, err := mlkem.NewEncapsulationKey768(pub)
+		if err != nil {
+			return nil, err
+		}
+		return MLKEMSender(pq), nil
+	case 0x0042: // ML-KEM-1024
+		if len(pub) != mlkem.EncapsulationKeySize1024 {
+			return nil, errors.New("invalid public key size")
+		}
+		pq, err := mlkem.NewEncapsulationKey1024(pub)
+		if err != nil {
+			return nil, err
+		}
+		return &mlkemSender{
+			id: 0x0042,
+			pq: pq,
+		}, nil
 	case 0x0050: // QSF-P256-MLKEM768-SHAKE256-SHA3256
 		if len(pub) != mlkem.EncapsulationKeySize768+65 {
 			return nil, errors.New("invalid public key size")
@@ -26,6 +47,25 @@ func UnstableNewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 			return nil, err
 		}
 		return QSFSender(k, pq)
+	case 0x0051: // QSF-P384-MLKEM1024-SHAKE256-SHA3256
+		if len(pub) != mlkem.EncapsulationKeySize1024+97 {
+			return nil, errors.New("invalid public key size")
+		}
+		pq, err := mlkem.NewEncapsulationKey1024(pub[:mlkem.EncapsulationKeySize1024])
+		if err != nil {
+			return nil, err
+		}
+		k, err := ecdh.P384().NewPublicKey(pub[mlkem.EncapsulationKeySize1024:])
+		if err != nil {
+			return nil, err
+		}
+		return &qsfSender{
+			t: k, pq: pq,
+			qsf: qsf{
+				id:    0x0051,
+				label: "QSF-P384-MLKEM1024-SHAKE256-SHA3256",
+			},
+		}, nil
 	case 0x647a: // QSF-X25519-MLKEM768-SHAKE256-SHA3256
 		if len(pub) != mlkem.EncapsulationKeySize768+32 {
 			return nil, errors.New("invalid public key size")
@@ -46,6 +86,27 @@ func UnstableNewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 
 func UnstableNewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 	switch id {
+	case 0x0041: // ML-KEM-768
+		if len(priv) != mlkem.SeedSize {
+			return nil, errors.New("invalid private key size")
+		}
+		pq, err := mlkem.NewDecapsulationKey768(priv)
+		if err != nil {
+			return nil, err
+		}
+		return MLKEMRecipient(pq), nil
+	case 0x0042: // ML-KEM-1024
+		if len(priv) != mlkem.SeedSize {
+			return nil, errors.New("invalid private key size")
+		}
+		pq, err := mlkem.NewDecapsulationKey1024(priv)
+		if err != nil {
+			return nil, err
+		}
+		return &mlkemRecipient{
+			id: 0x0042,
+			pq: pq,
+		}, nil
 	case 0x0050: // QSF-P256-MLKEM768-SHAKE256-SHA3256
 		if len(priv) != 32 {
 			return nil, errors.New("invalid private key size")
@@ -64,6 +125,30 @@ func UnstableNewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 			return nil, err
 		}
 		return qsfRecipientWithSeed(k, pq, priv)
+	case 0x0051: // QSF-P384-MLKEM1024-SHAKE256-SHA3256
+		if len(priv) != 32 {
+			return nil, errors.New("invalid private key size")
+		}
+		s := sha3.NewSHAKE256()
+		s.Write(priv)
+		exp := make([]byte, mlkem.SeedSize+72)
+		s.Read(exp)
+
+		pq, err := mlkem.NewDecapsulationKey1024(exp[:mlkem.SeedSize])
+		if err != nil {
+			return nil, err
+		}
+		k, err := ecdh.P384().NewPrivateKey(reduceScalar(exp[mlkem.SeedSize:], p384Order))
+		if err != nil {
+			return nil, err
+		}
+		return &qsfRecipient{
+			t: k, pq: pq, seed: bytes.Clone(priv),
+			qsf: qsf{
+				id:    0x0051,
+				label: "QSF-P384-MLKEM1024-SHAKE256-SHA3256",
+			},
+		}, nil
 	case 0x647a: // QSF-X25519-MLKEM768-SHAKE256-SHA3256
 		if len(priv) != 32 {
 			return nil, errors.New("invalid private key size")
@@ -89,8 +174,8 @@ func UnstableNewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 
 func UnstableNewKEMRecipientFromSeed(id uint16, seed []byte) (KEMRecipient, error) {
 	switch id {
-	case 0x0050, 0x647a:
-		// For QSF, the decapsulation key and the seed are the same.
+	case 0x0041, 0x0042, 0x0050, 0x0051, 0x647a:
+		// For ML-KEM and QSF, the decapsulation key and the seed are the same.
 		return UnstableNewKEMRecipient(id, seed)
 	default:
 		return NewKEMRecipientFromSeed(id, seed)
@@ -119,12 +204,18 @@ func (q *qsf) sharedSecret(ssPQ, ssT, ctT, ekT []byte) []byte {
 type qsfSender struct {
 	qsf
 	t  *ecdh.PublicKey
-	pq *mlkem.EncapsulationKey768
+	pq interface {
+		Bytes() []byte
+		Encapsulate() (sharedKey []byte, ciphertext []byte)
+	}
 }
 
 // QSFSender returns a KEMSender implementing QSF-P256-MLKEM768-SHAKE256-SHA3256
 // or QSF-X25519-MLKEM768-SHA3256-SHAKE256 (aka X-Wing) from draft-ietf-hpke-pq
-// and draft-irtf-cfrg-concrete-hybrid-kems-00.
+// and draft-irtf-cfrg-concrete-hybrid-kems.
+//
+// For the more uncommon QSF-P384-MLKEM1024-SHAKE256-SHA3256, use
+// [UnstableNewKEMSender] with the appropriate KEM ID.
 func QSFSender(t *ecdh.PublicKey, pq *mlkem.EncapsulationKey768) (KEMSender, error) {
 	switch t.Curve() {
 	case ecdh.P256():
@@ -183,12 +274,17 @@ type qsfRecipient struct {
 	qsf
 	seed []byte // can be nil
 	t    *ecdh.PrivateKey
-	pq   *mlkem.DecapsulationKey768
+	pq   interface {
+		Decapsulate(ciphertext []byte) (sharedKey []byte, err error)
+	}
 }
 
 // QSFRecipient returns a KEMRecipient implementing QSF-P256-MLKEM768-SHAKE256-SHA3256
 // or QSF-MLKEM768-X25519-SHA3256-SHAKE256 (aka X-Wing) from draft-ietf-hpke-pq
-// and draft-irtf-cfrg-concrete-hybrid-kems-00.
+// and draft-irtf-cfrg-concrete-hybrid-kems.
+//
+// For the more uncommon QSF-P384-MLKEM1024-SHAKE256-SHA3256, use
+// [UnstableNewKEMRecipient] with the appropriate KEM ID.
 func QSFRecipient(t *ecdh.PrivateKey, pq *mlkem.DecapsulationKey768) (KEMRecipient, error) {
 	return qsfRecipientWithSeed(t, pq, nil)
 }
@@ -225,15 +321,42 @@ func (r *qsfRecipient) Bytes() ([]byte, error) {
 }
 
 func (r *qsfRecipient) KEMSender() KEMSender {
-	return &qsfSender{
+	s := &qsfSender{
 		qsf: r.qsf,
 		t:   r.t.PublicKey(),
-		pq:  r.pq.EncapsulationKey(),
 	}
+	switch pq := r.pq.(type) {
+	case *mlkem.DecapsulationKey768:
+		s.pq = pq.EncapsulationKey()
+	case *mlkem.DecapsulationKey1024:
+		s.pq = pq.EncapsulationKey()
+	default:
+		panic("internal error: unknown pq type")
+	}
+	return s
 }
 
 func (r *qsfRecipient) decap(enc []byte) ([]byte, error) {
-	ctPQ, ctT := enc[:mlkem.CiphertextSize768], enc[mlkem.CiphertextSize768:]
+	var ctPQ, ctT []byte
+	switch r.id {
+	case 0x0050:
+		if len(enc) != mlkem.CiphertextSize768+65 {
+			return nil, errors.New("invalid encapsulated key size")
+		}
+		ctPQ, ctT = enc[:mlkem.CiphertextSize768], enc[mlkem.CiphertextSize768:]
+	case 0x0051:
+		if len(enc) != mlkem.CiphertextSize1024+97 {
+			return nil, errors.New("invalid encapsulated key size")
+		}
+		ctPQ, ctT = enc[:mlkem.CiphertextSize1024], enc[mlkem.CiphertextSize1024:]
+	case 0x647a:
+		if len(enc) != mlkem.CiphertextSize768+32 {
+			return nil, errors.New("invalid encapsulated key size")
+		}
+		ctPQ, ctT = enc[:mlkem.CiphertextSize768], enc[mlkem.CiphertextSize768:]
+	default:
+		return nil, errors.New("internal error: unsupported KEM")
+	}
 	ssPQ, err := r.pq.Decapsulate(ctPQ)
 	if err != nil {
 		return nil, err
@@ -278,3 +401,96 @@ var p384Order, _ = bigmod.NewModulus([]byte{
 	0x58, 0x1a, 0x0d, 0xb2, 0x48, 0xb0, 0xa7, 0x7a,
 	0xec, 0xec, 0x19, 0x6a, 0xcc, 0xc5, 0x29, 0x73,
 })
+
+type mlkemSender struct {
+	id uint16
+	pq interface {
+		Bytes() []byte
+		Encapsulate() (sharedKey []byte, ciphertext []byte)
+	}
+}
+
+// MLKEMSender returns a KEMSender implementing ML-KEM-768 from
+// draft-ietf-hpke-pq.
+//
+// For ML-KEM-1024, use [UnstableNewKEMSender] with the appropriate KEM ID.
+func MLKEMSender(pq *mlkem.EncapsulationKey768) KEMSender {
+	return &mlkemSender{
+		id: 0x0041,
+		pq: pq,
+	}
+}
+
+func (s *mlkemSender) ID() uint16 {
+	return s.id
+}
+
+func (s *mlkemSender) Bytes() []byte {
+	return s.pq.Bytes()
+}
+
+func (s *mlkemSender) encap() (sharedSecret []byte, encapPub []byte, err error) {
+	ss, ct := s.pq.Encapsulate()
+	if testingOnlyEncapsulate != nil {
+		ss, ct = testingOnlyEncapsulate()
+	}
+	return ss, ct, nil
+}
+
+type mlkemRecipient struct {
+	id uint16
+	pq interface {
+		Bytes() []byte
+		Decapsulate(ciphertext []byte) (sharedKey []byte, err error)
+	}
+}
+
+// MLKEMRecipient returns a KEMRecipient implementing ML-KEM-768 from
+// draft-ietf-hpke-pq.
+//
+// For ML-KEM-1024, use [UnstableNewKEMRecipient] with the appropriate KEM ID.
+func MLKEMRecipient(pq *mlkem.DecapsulationKey768) KEMRecipient {
+	return &mlkemRecipient{
+		id: 0x0041,
+		pq: pq,
+	}
+}
+
+func (r *mlkemRecipient) ID() uint16 {
+	return r.id
+}
+
+func (r *mlkemRecipient) Bytes() ([]byte, error) {
+	return r.pq.Bytes(), nil
+}
+
+func (r *mlkemRecipient) KEMSender() KEMSender {
+	s := &mlkemSender{
+		id: r.id,
+	}
+	switch pq := r.pq.(type) {
+	case *mlkem.DecapsulationKey768:
+		s.pq = pq.EncapsulationKey()
+	case *mlkem.DecapsulationKey1024:
+		s.pq = pq.EncapsulationKey()
+	default:
+		panic("internal error: unknown pq type")
+	}
+	return s
+}
+
+func (r *mlkemRecipient) decap(enc []byte) ([]byte, error) {
+	switch r.id {
+	case 0x0041:
+		if len(enc) != mlkem.CiphertextSize768 {
+			return nil, errors.New("invalid encapsulated key size")
+		}
+	case 0x0042:
+		if len(enc) != mlkem.CiphertextSize1024 {
+			return nil, errors.New("invalid encapsulated key size")
+		}
+	default:
+		return nil, errors.New("internal error: unsupported KEM")
+	}
+	return r.pq.Decapsulate(enc)
+}
