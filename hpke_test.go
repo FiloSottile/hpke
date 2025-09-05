@@ -7,13 +7,12 @@ package hpke
 import (
 	"bytes"
 	"crypto/ecdh"
+	"crypto/mlkem"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
 	"testing"
-
-	"filippo.io/mlkem768"
 )
 
 func mustDecodeHex(t *testing.T, in string) []byte {
@@ -244,21 +243,26 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			return r.(*dhKEMRecipient).priv
 		}
 	case 0x0041: // ML-KEM-768
+		pq := kem.(*mlkemSender).pq.(*mlkem.EncapsulationKey768)
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ct, ss, err := mlkem768.EncapsulateDerand(kem.(*mlkemSender).pq.Bytes(), randBytes)
+			ss, ct, err := MLKEMEncapsulate768(pq, randBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
 			return ss, ct
 		}
 	case 0x0042: // ML-KEM-1024
+		pq := kem.(*mlkemSender).pq.(*mlkem.EncapsulationKey1024)
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			_ = randBytes
-			t.Skip("ML-KEM-1024 EncapsulateDerand not implemented") // TODO
-			return nil, nil
+			ss, ct, err := MLKEMEncapsulate1024(pq, randBytes)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ss, ct
 		}
 	case 0x0050: // QSF-P256-MLKEM768-SHAKE256-SHA3256
 		pqRand, tRand := randBytes[:32], randBytes[32:]
+		pq := kem.(*qsfSender).pq.(*mlkem.EncapsulationKey768)
 		k, err := ecdh.P256().NewPrivateKey(reduceScalar(tRand, p256Order))
 		if err != nil {
 			t.Fatal(err)
@@ -267,7 +271,7 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			return k
 		}
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ct, ss, err := mlkem768.EncapsulateDerand(kem.(*qsfSender).pq.Bytes(), pqRand)
+			ss, ct, err := MLKEMEncapsulate768(pq, pqRand)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -275,6 +279,7 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 		}
 	case 0x0051: // QSF-P384-MLKEM1024-SHAKE256-SHA3256
 		pqRand, tRand := randBytes[:32], randBytes[32:]
+		pq := kem.(*qsfSender).pq.(*mlkem.EncapsulationKey1024)
 		k, err := ecdh.P384().NewPrivateKey(reduceScalar(tRand, p384Order))
 		if err != nil {
 			t.Fatal(err)
@@ -283,12 +288,15 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			return k
 		}
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			_ = pqRand
-			t.Skip("ML-KEM-1024 EncapsulateDerand not implemented") // TODO
-			return nil, nil
+			ss, ct, err := MLKEMEncapsulate1024(pq, pqRand)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return ss, ct
 		}
 	case 0x647a: // QSF-X25519-MLKEM768-SHAKE256-SHA3256
 		pqRand, tRand := randBytes[:32], randBytes[32:]
+		pq := kem.(*qsfSender).pq.(*mlkem.EncapsulationKey768)
 		k, err := ecdh.X25519().NewPrivateKey(tRand)
 		if err != nil {
 			t.Fatal(err)
@@ -297,7 +305,7 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			return k
 		}
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ct, ss, err := mlkem768.EncapsulateDerand(kem.(*qsfSender).pq.Bytes(), pqRand)
+			ss, ct, err := MLKEMEncapsulate768(pq, pqRand)
 			if err != nil {
 				t.Fatal(err)
 			}

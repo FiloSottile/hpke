@@ -4,7 +4,6 @@ go 1.24.0
 
 require (
 	filippo.io/bigmod v0.1.0
-	filippo.io/mlkem768 v0.0.0-20250818110517-29047ffe79fb
 	golang.org/x/crypto v0.41.0
 )
 
