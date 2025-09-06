@@ -11,6 +11,16 @@ import (
 	"filippo.io/bigmod"
 )
 
+// UnstableNewKEMSender extends [NewKEMSender] to also implement
+//
+//   - ML-KEM-768
+//   - ML-KEM-1024
+//   - QSF-P256-MLKEM768-SHAKE256-SHA3256
+//   - QSF-P384-MLKEM1024-SHAKE256-SHA3256
+//   - QSF-X25519-MLKEM768-SHAKE256-SHA3256 (a.k.a. X-Wing)
+//
+// from draft-ietf-hpke-pq. Their implementation may still change while the
+// document is in draft status.
 func UnstableNewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	switch id {
 	case 0x0041: // ML-KEM-768
@@ -84,6 +94,16 @@ func UnstableNewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	}
 }
 
+// UnstableNewKEMRecipient extends [NewKEMRecipient] to also implement
+//
+//   - ML-KEM-768
+//   - ML-KEM-1024
+//   - QSF-P256-MLKEM768-SHAKE256-SHA3256
+//   - QSF-P384-MLKEM1024-SHAKE256-SHA3256
+//   - QSF-X25519-MLKEM768-SHAKE256-SHA3256 (a.k.a. X-Wing)
+//
+// from draft-ietf-hpke-pq. Their implementation may still change while the
+// document is in draft status.
 func UnstableNewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 	switch id {
 	case 0x0041: // ML-KEM-768
@@ -172,10 +192,23 @@ func UnstableNewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 	}
 }
 
+// UnstableNewKEMRecipientFromSeed extends [NewKEMRecipientFromSeed] to also
+// implement
+//
+//   - ML-KEM-768
+//   - ML-KEM-1024
+//   - QSF-P256-MLKEM768-SHAKE256-SHA3256
+//   - QSF-P384-MLKEM1024-SHAKE256-SHA3256
+//   - QSF-X25519-MLKEM768-SHAKE256-SHA3256 (a.k.a. X-Wing)
+//
+// from draft-ietf-hpke-pq. Their implementation may still change while the
+// document is in draft status.
+//
+// Note that at the moment, the private key for all those KEMs is the same as
+// the seed, and unlike DHKEM the seed must have a fixed per-KEM length.
 func UnstableNewKEMRecipientFromSeed(id uint16, seed []byte) (KEMRecipient, error) {
 	switch id {
 	case 0x0041, 0x0042, 0x0050, 0x0051, 0x647a:
-		// For ML-KEM and QSF, the decapsulation key and the seed are the same.
 		return UnstableNewKEMRecipient(id, seed)
 	default:
 		return NewKEMRecipientFromSeed(id, seed)
@@ -211,8 +244,8 @@ type qsfSender struct {
 }
 
 // QSFSender returns a KEMSender implementing QSF-P256-MLKEM768-SHAKE256-SHA3256
-// or QSF-X25519-MLKEM768-SHA3256-SHAKE256 (aka X-Wing) from draft-ietf-hpke-pq
-// and draft-irtf-cfrg-concrete-hybrid-kems.
+// or QSF-X25519-MLKEM768-SHA3256-SHAKE256 (a.k.a. X-Wing) from
+// draft-ietf-hpke-pq, depending on the underlying curve of t.
 //
 // For the more uncommon QSF-P384-MLKEM1024-SHAKE256-SHA3256, use
 // [UnstableNewKEMSender] with the appropriate KEM ID.
@@ -279,9 +312,9 @@ type qsfRecipient struct {
 	}
 }
 
-// QSFRecipient returns a KEMRecipient implementing QSF-P256-MLKEM768-SHAKE256-SHA3256
-// or QSF-MLKEM768-X25519-SHA3256-SHAKE256 (aka X-Wing) from draft-ietf-hpke-pq
-// and draft-irtf-cfrg-concrete-hybrid-kems.
+// QSFRecipient returns a KEMRecipient implementing
+// QSF-P256-MLKEM768-SHAKE256-SHA3256 or QSF-X25519-MLKEM768-SHA3256-SHAKE256
+// (a.k.a. X-Wing) from draft-ietf-hpke-pq, depending on the underlying curve of t.
 //
 // For the more uncommon QSF-P384-MLKEM1024-SHAKE256-SHA3256, use
 // [UnstableNewKEMRecipient] with the appropriate KEM ID.

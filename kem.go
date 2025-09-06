@@ -7,6 +7,8 @@ import (
 	"errors"
 )
 
+// A KEMSender is an instantiation of a KEM (one of the three components of an
+// HPKE ciphersuite) with an encapsulation key (i.e. the public key).
 type KEMSender interface {
 	// ID returns the HPKE KEM identifier.
 	ID() uint16
@@ -19,6 +21,9 @@ type KEMSender interface {
 
 // NewKEMSender implements DeserializePublicKey and returns a KEMSender
 // for the given KEM ID and public key bytes.
+//
+// Applications are encouraged to use [ecdh.Curve.NewPublicKey] with
+// [DHKEMSender] instead, unless runtime agility is required.
 func NewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	switch id {
 	case 0x0010: // DHKEM(P-256, HKDF-SHA256)
@@ -50,6 +55,8 @@ func NewKEMSender(id uint16, pub []byte) (KEMSender, error) {
 	}
 }
 
+// A KEMRecipient is an instantiation of a KEM (one of the three components of
+// an HPKE ciphersuite) with a decapsulation key (i.e. the secret key).
 type KEMRecipient interface {
 	// ID returns the HPKE KEM identifier.
 	ID() uint16
@@ -68,6 +75,9 @@ type KEMRecipient interface {
 
 // NewKEMRecipient implements DeserializePrivateKey and returns a KEMRecipient
 // for the given KEM ID and private key bytes.
+//
+// Applications are encouraged to use [ecdh.Curve.NewPrivateKey] with
+// [DHKEMRecipient] instead, unless runtime agility is required.
 func NewKEMRecipient(id uint16, priv []byte) (KEMRecipient, error) {
 	switch id {
 	case 0x0010: // DHKEM(P-256, HKDF-SHA256)
@@ -291,11 +301,11 @@ func (dh *dhKEMRecipient) Bytes() ([]byte, error) {
 	// the output, which I thought we all agreed to instead do as part of the DH
 	// function, letting private keys be random bytes.
 	//
-	// At the same time, DeserializePrivateKey MUST also clamp, implying
+	// At the same time, it says DeserializePrivateKey MUST also clamp, implying
 	// that the input doesn't have to be clamped, so Bytes by spec doesn't
 	// necessarily match the NewPrivateKey input.
 	//
-	// Sigh.
+	// I'm sure this will not lead to any unexpected behavior or interop issue.
 	if dh.id == 0x0020 { // X25519
 		b := dh.priv.Bytes()
 		b[0] &= 248

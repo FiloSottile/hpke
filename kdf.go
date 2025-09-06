@@ -9,12 +9,18 @@ import (
 	"hash"
 )
 
+// The KDF is one of the three components of an HPKE ciphersuite, implementing
+// key derivation.
 type KDF interface {
 	ID() uint16
 	labeledExtract(sid, salt []byte, label string, inputKey []byte) ([]byte, error)
 	labeledExpand(suiteID, randomKey []byte, label string, info []byte, length uint16) ([]byte, error)
 }
 
+// NewKDF returns the KDF implementation for the given KDF ID.
+//
+// Applications are encouraged to use specific implementations like [HKDFSHA256]
+// instead, unless runtime agility is required.
 func NewKDF(id uint16) (KDF, error) {
 	switch id {
 	case 0x0001: // HKDF-SHA256
@@ -28,8 +34,13 @@ func NewKDF(id uint16) (KDF, error) {
 	}
 }
 
+// HKDFSHA256 returns an HKDF-SHA256 KDF implementation.
 func HKDFSHA256() KDF { return hkdfSHA256 }
+
+// HKDFSHA384 returns an HKDF-SHA384 KDF implementation.
 func HKDFSHA384() KDF { return hkdfSHA384 }
+
+// HKDFSHA512 returns an HKDF-SHA512 KDF implementation.
 func HKDFSHA512() KDF { return hkdfSHA512 }
 
 type hkdfKDF struct {
