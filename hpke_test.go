@@ -256,7 +256,7 @@ func setupDerandomizedEncap(t *testing.T, kemID uint16, randBytes []byte, kem KE
 			t.Fatal(err)
 		}
 		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
-			return r.(*dhKEMRecipient).priv
+			return r.(*dhKEMRecipient).priv.(*ecdh.PrivateKey)
 		}
 	case 0x0041: // ML-KEM-768
 		pq := kem.(*mlkemSender).pq.(*mlkem.EncapsulationKey768)

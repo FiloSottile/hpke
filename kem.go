@@ -274,7 +274,13 @@ func (dh *dhKEMSender) encap() (sharedSecret []byte, encapPub []byte, err error)
 
 type dhKEMRecipient struct {
 	dhKEM
-	priv *ecdh.PrivateKey
+	priv ECDHPrivateKey
+}
+
+type ECDHPrivateKey interface {
+	PublicKey() *ecdh.PublicKey
+	Curve() ecdh.Curve
+	ECDH(*ecdh.PublicKey) ([]byte, error)
 }
 
 // DHKEMRecipient returns a KEMRecipient implementing one of
@@ -285,7 +291,7 @@ type dhKEMRecipient struct {
 //   - DHKEM(X25519, HKDF-SHA256)
 //
 // depending on the underlying curve of the provided private key.
-func DHKEMRecipient(priv *ecdh.PrivateKey) (KEMRecipient, error) {
+func DHKEMRecipient(priv ECDHPrivateKey) (KEMRecipient, error) {
 	dhKEM, err := dhKEMForCurve(priv.Curve())
 	if err != nil {
 		return nil, err
@@ -297,6 +303,13 @@ func DHKEMRecipient(priv *ecdh.PrivateKey) (KEMRecipient, error) {
 }
 
 func (dh *dhKEMRecipient) Bytes() ([]byte, error) {
+	priv, ok := dh.priv.(interface {
+		ECDHPrivateKey
+		Bytes() []byte
+	})
+	if !ok {
+		return nil, errors.New("private key type does not support Bytes")
+	}
 	// Bizarrely, RFC 9180, Section 7.1.2 says SerializePrivateKey MUST clamp
 	// the output, which I thought we all agreed to instead do as part of the DH
 	// function, letting private keys be random bytes.
@@ -307,13 +320,13 @@ func (dh *dhKEMRecipient) Bytes() ([]byte, error) {
 	//
 	// I'm sure this will not lead to any unexpected behavior or interop issue.
 	if dh.id == 0x0020 { // X25519
-		b := dh.priv.Bytes()
+		b := priv.Bytes()
 		b[0] &= 248
 		b[31] &= 127
 		b[31] |= 64
 		return b, nil
 	}
-	return dh.priv.Bytes(), nil
+	return priv.Bytes(), nil
 }
 
 func (dh *dhKEMRecipient) KEMSender() KEMSender {
