@@ -301,12 +301,16 @@ type qsfRecipient[EK MLKEMEncapsulationKey] struct {
 	pq   MLKEMDecapsulationKey[EK]
 }
 
+// MLKEMEncapsulationKey is an interface for crypto/mlkem encapsulation keys,
+// used as a type constraint in [MLKEMDecapsulationKey].
 type MLKEMEncapsulationKey interface {
 	*mlkem.EncapsulationKey768 | *mlkem.EncapsulationKey1024
 	Bytes() []byte
 	Encapsulate() (sharedKey []byte, ciphertext []byte)
 }
 
+// MLKEMDecapsulationKey is an interface for ML-KEM decapsulation keys, to allow
+// hardware implementations to be used with [QSFRecipient] and [MLKEMRecipient].
 type MLKEMDecapsulationKey[EK MLKEMEncapsulationKey] interface {
 	Decapsulate(ciphertext []byte) (sharedKey []byte, err error)
 	EncapsulationKey() EK

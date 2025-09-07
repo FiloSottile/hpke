@@ -277,6 +277,8 @@ type dhKEMRecipient struct {
 	priv ECDHPrivateKey
 }
 
+// ECDHPrivateKey is an interface for ECDH private keys, to allow hardware
+// implementations to be used with [DHKEMRecipient] and [QSFRecipient].
 type ECDHPrivateKey interface {
 	PublicKey() *ecdh.PublicKey
 	Curve() ecdh.Curve
