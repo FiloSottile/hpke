@@ -140,7 +140,7 @@ func (s *Sender) Seal(aad, plaintext []byte) ([]byte, error) {
 }
 
 // Seal instantiates a single-use HPKE sending HPKE context like [NewSender],
-// and then encrypts the provided plaintext like [Sender.Open] (with no aad).
+// and then encrypts the provided plaintext like [Sender.Seal] (with no aad).
 func Seal(kem KEMSender, kdf KDF, aead AEAD, info, plaintext []byte) (enc, ct []byte, err error) {
 	enc, s, err := NewSender(kem, kdf, aead, info)
 	if err != nil {
