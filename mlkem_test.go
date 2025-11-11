@@ -1,4 +1,4 @@
-//go:build !go1.26
+//go:build !go1.26 && !fips140v1.0
 
 package hpke
 

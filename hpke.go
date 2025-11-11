@@ -12,7 +12,6 @@ import (
 	"crypto/cipher"
 	"encoding/binary"
 	"errors"
-	"math/bits"
 )
 
 type context struct {
@@ -22,7 +21,9 @@ type context struct {
 
 	aead      cipher.AEAD
 	baseNonce []byte
-	seqNum    uint128
+	// seqNum starts at zero and is incremented for each Seal/Open call.
+	// 64 bits are enough not to overflow for 500 years at 1ns per operation.
+	seqNum uint64
 }
 
 // Sender is a sending HPKE context. It is instantiated with a specific KEM
@@ -41,6 +42,43 @@ type Recipient struct {
 
 func newContext(sharedSecret []byte, kemID uint16, kdf KDF, aead AEAD, info []byte) (*context, error) {
 	sid := suiteID(kemID, kdf.ID(), aead.ID())
+
+	if kdf.oneStage() {
+		secrets := make([]byte, 0, 2+2+len(sharedSecret))
+		secrets = binary.BigEndian.AppendUint16(secrets, 0) // empty psk
+		secrets = binary.BigEndian.AppendUint16(secrets, uint16(len(sharedSecret)))
+		secrets = append(secrets, sharedSecret...)
+
+		ksContext := make([]byte, 0, 1+2+2+len(info))
+		ksContext = append(ksContext, 0)                        // mode 0
+		ksContext = binary.BigEndian.AppendUint16(ksContext, 0) // empty psk_id
+		ksContext = binary.BigEndian.AppendUint16(ksContext, uint16(len(info)))
+		ksContext = append(ksContext, info...)
+
+		secret, err := kdf.labeledDerive(sid, secrets, "secret", ksContext,
+			uint16(aead.keySize()+aead.nonceSize()+kdf.size()))
+		if err != nil {
+			return nil, err
+		}
+		key := secret[:aead.keySize()]
+		baseNonce := secret[aead.keySize() : aead.keySize()+aead.nonceSize()]
+		expSecret := secret[aead.keySize()+aead.nonceSize():]
+
+		a, err := aead.aead(key)
+		if err != nil {
+			return nil, err
+		}
+		export := func(exporterContext string, length uint16) ([]byte, error) {
+			return kdf.labeledDerive(sid, expSecret, "sec", []byte(exporterContext), length)
+		}
+
+		return &context{
+			aead:      a,
+			suiteID:   sid,
+			export:    export,
+			baseNonce: baseNonce,
+		}, nil
+	}
 
 	pskIDHash, err := kdf.labeledExtract(sid, nil, "psk_id_hash", nil)
 	if err != nil {
@@ -69,7 +107,7 @@ func newContext(sharedSecret []byte, kemID uint16, kdf KDF, aead AEAD, info []by
 	if err != nil {
 		return nil, err
 	}
-	expSecret, err := kdf.labeledExpand(sid, secret, "exp", ksContext, uint16(len(secret)))
+	expSecret, err := kdf.labeledExpand(sid, secret, "exp", ksContext, uint16(kdf.size()))
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +132,12 @@ func newContext(sharedSecret []byte, kemID uint16, kdf KDF, aead AEAD, info []by
 //
 // The returned enc ciphertext can be used to instantiate a matching receiving
 // HPKE context with the corresponding KEM decapsulation key.
-func NewSender(kem KEMSender, kdf KDF, aead AEAD, info []byte) (enc []byte, s *Sender, err error) {
+func NewSender(kem PublicKey, kdf KDF, aead AEAD, info []byte) (enc []byte, s *Sender, err error) {
 	sharedSecret, encapsulatedKey, err := kem.encap()
 	if err != nil {
 		return nil, nil, err
 	}
-	context, err := newContext(sharedSecret, kem.ID(), kdf, aead, info)
+	context, err := newContext(sharedSecret, kem.KEM().ID(), kdf, aead, info)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -113,12 +151,12 @@ func NewSender(kem KEMSender, kdf KDF, aead AEAD, info []byte) (enc []byte, s *S
 // The enc parameter must have been produced by a matching sending HPKE context
 // with the corresponding KEM encapsulation key. The info parameter is
 // additional public information that must match between sender and recipient.
-func NewRecipient(enc []byte, kem KEMRecipient, kdf KDF, aead AEAD, info []byte) (*Recipient, error) {
+func NewRecipient(enc []byte, kem PrivateKey, kdf KDF, aead AEAD, info []byte) (*Recipient, error) {
 	sharedSecret, err := kem.decap(enc)
 	if err != nil {
 		return nil, err
 	}
-	context, err := newContext(sharedSecret, kem.ID(), kdf, aead, info)
+	context, err := newContext(sharedSecret, kem.KEM().ID(), kdf, aead, info)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +173,13 @@ func (s *Sender) Seal(aad, plaintext []byte) ([]byte, error) {
 		return nil, errors.New("export-only instantiation")
 	}
 	ciphertext := s.aead.Seal(nil, s.nextNonce(), plaintext, aad)
-	s.incrementNonce()
+	s.seqNum++
 	return ciphertext, nil
 }
 
 // Seal instantiates a single-use HPKE sending HPKE context like [NewSender],
 // and then encrypts the provided plaintext like [Sender.Seal] (with no aad).
-func Seal(kem KEMSender, kdf KDF, aead AEAD, info, plaintext []byte) (enc, ct []byte, err error) {
+func Seal(kem PublicKey, kdf KDF, aead AEAD, info, plaintext []byte) (enc, ct []byte, err error) {
 	enc, s, err := NewSender(kem, kdf, aead, info)
 	if err != nil {
 		return nil, nil, err
@@ -175,13 +213,13 @@ func (r *Recipient) Open(aad, ciphertext []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.incrementNonce()
+	r.seqNum++
 	return plaintext, nil
 }
 
 // Open instantiates a single-use HPKE receiving HPKE context like [NewRecipient],
 // and then decrypts the provided ciphertext like [Recipient.Open] (with no aad).
-func Open(enc []byte, kem KEMRecipient, kdf KDF, aead AEAD, info, ciphertext []byte) ([]byte, error) {
+func Open(enc []byte, kem PrivateKey, kdf KDF, aead AEAD, info, ciphertext []byte) ([]byte, error) {
 	r, err := NewRecipient(enc, kem, kdf, aead, info)
 	if err != nil {
 		return nil, err
@@ -199,15 +237,12 @@ func (r *Recipient) Export(exporterContext string, length int) ([]byte, error) {
 }
 
 func (ctx *context) nextNonce() []byte {
-	nonce := ctx.seqNum.bytes()[16-ctx.aead.NonceSize():]
+	nonce := make([]byte, ctx.aead.NonceSize())
+	binary.BigEndian.PutUint64(nonce[len(nonce)-8:], ctx.seqNum)
 	for i := range ctx.baseNonce {
 		nonce[i] ^= ctx.baseNonce[i]
 	}
 	return nonce
-}
-
-func (ctx *context) incrementNonce() {
-	ctx.seqNum = ctx.seqNum.addOne()
 }
 
 func suiteID(kemID, kdfID, aeadID uint16) []byte {
@@ -217,20 +252,4 @@ func suiteID(kemID, kdfID, aeadID uint16) []byte {
 	suiteID = binary.BigEndian.AppendUint16(suiteID, kdfID)
 	suiteID = binary.BigEndian.AppendUint16(suiteID, aeadID)
 	return suiteID
-}
-
-type uint128 struct {
-	hi, lo uint64
-}
-
-func (u uint128) addOne() uint128 {
-	lo, carry := bits.Add64(u.lo, 1, 0)
-	return uint128{u.hi + carry, lo}
-}
-
-func (u uint128) bytes() []byte {
-	b := make([]byte, 16)
-	binary.BigEndian.PutUint64(b[0:], u.hi)
-	binary.BigEndian.PutUint64(b[8:], u.lo)
-	return b
 }
