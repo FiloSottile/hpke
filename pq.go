@@ -14,6 +14,7 @@ import (
 	"errors"
 
 	"filippo.io/hpke/crypto"
+	hpkeecdh "filippo.io/hpke/crypto/ecdh"
 )
 
 var mlkem768X25519 = &hybridKEM{
@@ -220,7 +221,7 @@ func (pk *hybridPublicKey) encap() (sharedSecret []byte, encapPub []byte, err er
 type hybridPrivateKey struct {
 	kem  *hybridKEM
 	seed []byte // can be nil
-	t    KeyExchanger
+	t    hpkeecdh.KeyExchanger
 	pq   crypto.Decapsulator
 }
 
@@ -231,15 +232,15 @@ type hybridPrivateKey struct {
 //   - MLKEM1024-P384
 //
 // from draft-ietf-hpke-pq, depending on the underlying curve of t
-// ([ecdh.X25519], [ecdh.P256], or [ecdh.P384]) and the type of pq.crypto.Encapsulator()
+// ([ecdh.X25519], [ecdh.P256], or [ecdh.P384]) and the type of pq.Encapsulator()
 // (either *[mlkem.EncapsulationKey768] or *[mlkem.EncapsulationKey1024]).
 //
 // This function is meant for applications that already have instantiated
 // crypto/ecdh and crypto/mlkem private keys, or another implementation of a
-// [KeyExchanger] and [crypto.Decapsulator] (e.g. a hardware key).
+// [hpkeecdh.KeyExchanger] and [crypto.Decapsulator] (e.g. a hardware key).
 // Otherwise, applications should use the [KEM.NewPrivateKey] method of e.g.
 // [MLKEM768X25519].
-func NewHybridPrivateKey(t KeyExchanger, pq crypto.Decapsulator) (PrivateKey, error) {
+func NewHybridPrivateKey(t hpkeecdh.KeyExchanger, pq crypto.Decapsulator) (PrivateKey, error) {
 	return newHybridPrivateKey(t, pq, nil)
 }
 
@@ -275,20 +276,20 @@ func (kem *hybridKEM) NewPrivateKey(priv []byte) (PrivateKey, error) {
 	}
 }
 
-func newHybridPrivateKey(t KeyExchanger, pq crypto.Decapsulator, seed []byte) (PrivateKey, error) {
+func newHybridPrivateKey(t hpkeecdh.KeyExchanger, pq crypto.Decapsulator, seed []byte) (PrivateKey, error) {
 	switch t.Curve() {
 	case ecdh.X25519():
-		if _, ok := pq.crypto.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
+		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
 			return nil, errors.New("invalid PQ KEM for X25519 hybrid")
 		}
 		return &hybridPrivateKey{mlkem768X25519, bytes.Clone(seed), t, pq}, nil
 	case ecdh.P256():
-		if _, ok := pq.crypto.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
+		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
 			return nil, errors.New("invalid PQ KEM for P-256 hybrid")
 		}
 		return &hybridPrivateKey{mlkem768P256, bytes.Clone(seed), t, pq}, nil
 	case ecdh.P384():
-		if _, ok := pq.crypto.Encapsulator().(*mlkem.EncapsulationKey1024); !ok {
+		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey1024); !ok {
 			return nil, errors.New("invalid PQ KEM for P-384 hybrid")
 		}
 		return &hybridPrivateKey{mlkem1024P384, bytes.Clone(seed), t, pq}, nil
@@ -321,7 +322,7 @@ func (k *hybridPrivateKey) PublicKey() PublicKey {
 	return &hybridPublicKey{
 		kem: k.kem,
 		t:   k.t.PublicKey(),
-		pq:  k.pq.crypto.Encapsulator(),
+		pq:  k.pq.Encapsulator(),
 	}
 }
 
@@ -456,14 +457,14 @@ type mlkemPrivateKey struct {
 //   - ML-KEM-768
 //   - ML-KEM-1024
 //
-// from draft-ietf-hpke-pq, depending on the type of priv.crypto.Encapsulator()
+// from draft-ietf-hpke-pq, depending on the type of priv.Encapsulator()
 // (either *[mlkem.EncapsulationKey768] or *[mlkem.EncapsulationKey1024]).
 //
 // This function is meant for applications that already have an instantiated
 // crypto/mlkem private key. Otherwise, applications should use the
 // [KEM.NewPrivateKey] method of e.g. [MLKEM768].
 func NewMLKEMPrivateKey(priv crypto.Decapsulator) (PrivateKey, error) {
-	switch priv.crypto.Encapsulator().(type) {
+	switch priv.Encapsulator().(type) {
 	case *mlkem.EncapsulationKey768:
 		return &mlkemPrivateKey{mlkem768, priv}, nil
 	case *mlkem.EncapsulationKey1024:
@@ -515,7 +516,7 @@ func (k *mlkemPrivateKey) Bytes() ([]byte, error) {
 func (k *mlkemPrivateKey) PublicKey() PublicKey {
 	return &mlkemPublicKey{
 		kem: k.kem,
-		pq:  k.pq.crypto.Encapsulator(),
+		pq:  k.pq.Encapsulator(),
 	}
 }
 
