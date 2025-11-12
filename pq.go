@@ -12,6 +12,8 @@ import (
 	"crypto/sha3"
 	"encoding/binary"
 	"errors"
+
+	"filippo.io/hpke/crypto"
 )
 
 var mlkem768X25519 = &hybridKEM{
@@ -25,13 +27,13 @@ var mlkem768X25519 = &hybridKEM{
 	pqEncapsKeySize:  mlkem.EncapsulationKeySize768,
 	pqCiphertextSize: mlkem.CiphertextSize768,
 
-	pqNewPublicKey: func(data []byte) (Encapsulator, error) {
+	pqNewPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey768(data)
 	},
-	pqNewPrivateKey: func(data []byte) (Decapsulator, error) {
+	pqNewPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey768(data))
 	},
-	pqGenerateKey: func() (Decapsulator, error) {
+	pqGenerateKey: func() (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.GenerateKey768())
 	},
 }
@@ -52,13 +54,13 @@ var mlkem768P256 = &hybridKEM{
 	pqEncapsKeySize:  mlkem.EncapsulationKeySize768,
 	pqCiphertextSize: mlkem.CiphertextSize768,
 
-	pqNewPublicKey: func(data []byte) (Encapsulator, error) {
+	pqNewPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey768(data)
 	},
-	pqNewPrivateKey: func(data []byte) (Decapsulator, error) {
+	pqNewPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey768(data))
 	},
-	pqGenerateKey: func() (Decapsulator, error) {
+	pqGenerateKey: func() (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.GenerateKey768())
 	},
 }
@@ -78,13 +80,13 @@ var mlkem1024P384 = &hybridKEM{
 	pqEncapsKeySize:  mlkem.EncapsulationKeySize1024,
 	pqCiphertextSize: mlkem.CiphertextSize1024,
 
-	pqNewPublicKey: func(data []byte) (Encapsulator, error) {
+	pqNewPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey1024(data)
 	},
-	pqNewPrivateKey: func(data []byte) (Decapsulator, error) {
+	pqNewPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey1024(data))
 	},
-	pqGenerateKey: func() (Decapsulator, error) {
+	pqGenerateKey: func() (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.GenerateKey1024())
 	},
 }
@@ -104,9 +106,9 @@ type hybridKEM struct {
 	pqEncapsKeySize  int
 	pqCiphertextSize int
 
-	pqNewPublicKey  func(data []byte) (Encapsulator, error)
-	pqNewPrivateKey func(data []byte) (Decapsulator, error)
-	pqGenerateKey   func() (Decapsulator, error)
+	pqNewPublicKey  func(data []byte) (crypto.Encapsulator, error)
+	pqNewPrivateKey func(data []byte) (crypto.Decapsulator, error)
+	pqGenerateKey   func() (crypto.Decapsulator, error)
 }
 
 func (kem *hybridKEM) ID() uint16 {
@@ -128,7 +130,7 @@ func (kem *hybridKEM) sharedSecret(ssPQ, ssT, ctT, ekT []byte) []byte {
 type hybridPublicKey struct {
 	kem *hybridKEM
 	t   *ecdh.PublicKey
-	pq  Encapsulator
+	pq  crypto.Encapsulator
 }
 
 // NewHybridPublicKey returns a PublicKey implementing one of
@@ -144,7 +146,7 @@ type hybridPublicKey struct {
 // This function is meant for applications that already have instantiated
 // crypto/ecdh and crypto/mlkem public keys. Otherwise, applications should use
 // the [KEM.NewPublicKey] method of e.g. [MLKEM768X25519].
-func NewHybridPublicKey(t *ecdh.PublicKey, pq Encapsulator) (PublicKey, error) {
+func NewHybridPublicKey(t *ecdh.PublicKey, pq crypto.Encapsulator) (PublicKey, error) {
 	switch t.Curve() {
 	case ecdh.X25519():
 		if _, ok := pq.(*mlkem.EncapsulationKey768); !ok {
@@ -219,7 +221,7 @@ type hybridPrivateKey struct {
 	kem  *hybridKEM
 	seed []byte // can be nil
 	t    KeyExchanger
-	pq   Decapsulator
+	pq   crypto.Decapsulator
 }
 
 // NewHybridPrivateKey returns a PrivateKey implementing
@@ -229,15 +231,15 @@ type hybridPrivateKey struct {
 //   - MLKEM1024-P384
 //
 // from draft-ietf-hpke-pq, depending on the underlying curve of t
-// ([ecdh.X25519], [ecdh.P256], or [ecdh.P384]) and the type of pq.Encapsulator()
+// ([ecdh.X25519], [ecdh.P256], or [ecdh.P384]) and the type of pq.crypto.Encapsulator()
 // (either *[mlkem.EncapsulationKey768] or *[mlkem.EncapsulationKey1024]).
 //
 // This function is meant for applications that already have instantiated
 // crypto/ecdh and crypto/mlkem private keys, or another implementation of a
-// [KeyExchanger] and [Decapsulator] (e.g. a hardware key).
+// [KeyExchanger] and [crypto.Decapsulator] (e.g. a hardware key).
 // Otherwise, applications should use the [KEM.NewPrivateKey] method of e.g.
 // [MLKEM768X25519].
-func NewHybridPrivateKey(t KeyExchanger, pq Decapsulator) (PrivateKey, error) {
+func NewHybridPrivateKey(t KeyExchanger, pq crypto.Decapsulator) (PrivateKey, error) {
 	return newHybridPrivateKey(t, pq, nil)
 }
 
@@ -273,20 +275,20 @@ func (kem *hybridKEM) NewPrivateKey(priv []byte) (PrivateKey, error) {
 	}
 }
 
-func newHybridPrivateKey(t KeyExchanger, pq Decapsulator, seed []byte) (PrivateKey, error) {
+func newHybridPrivateKey(t KeyExchanger, pq crypto.Decapsulator, seed []byte) (PrivateKey, error) {
 	switch t.Curve() {
 	case ecdh.X25519():
-		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
+		if _, ok := pq.crypto.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
 			return nil, errors.New("invalid PQ KEM for X25519 hybrid")
 		}
 		return &hybridPrivateKey{mlkem768X25519, bytes.Clone(seed), t, pq}, nil
 	case ecdh.P256():
-		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
+		if _, ok := pq.crypto.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
 			return nil, errors.New("invalid PQ KEM for P-256 hybrid")
 		}
 		return &hybridPrivateKey{mlkem768P256, bytes.Clone(seed), t, pq}, nil
 	case ecdh.P384():
-		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey1024); !ok {
+		if _, ok := pq.crypto.Encapsulator().(*mlkem.EncapsulationKey1024); !ok {
 			return nil, errors.New("invalid PQ KEM for P-384 hybrid")
 		}
 		return &hybridPrivateKey{mlkem1024P384, bytes.Clone(seed), t, pq}, nil
@@ -319,7 +321,7 @@ func (k *hybridPrivateKey) PublicKey() PublicKey {
 	return &hybridPublicKey{
 		kem: k.kem,
 		t:   k.t.PublicKey(),
-		pq:  k.pq.Encapsulator(),
+		pq:  k.pq.crypto.Encapsulator(),
 	}
 }
 
@@ -346,13 +348,13 @@ func (k *hybridPrivateKey) decap(enc []byte) ([]byte, error) {
 
 var mlkem768 = &mlkemKEM{
 	id: 0x0041,
-	newPublicKey: func(data []byte) (Encapsulator, error) {
+	newPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey768(data)
 	},
-	newPrivateKey: func(data []byte) (Decapsulator, error) {
+	newPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey768(data))
 	},
-	generateKey: func() (Decapsulator, error) {
+	generateKey: func() (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.GenerateKey768())
 	},
 }
@@ -364,13 +366,13 @@ func MLKEM768() KEM {
 
 var mlkem1024 = &mlkemKEM{
 	id: 0x0042,
-	newPublicKey: func(data []byte) (Encapsulator, error) {
+	newPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey1024(data)
 	},
-	newPrivateKey: func(data []byte) (Decapsulator, error) {
+	newPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey1024(data))
 	},
-	generateKey: func() (Decapsulator, error) {
+	generateKey: func() (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.GenerateKey1024())
 	},
 }
@@ -382,9 +384,9 @@ func MLKEM1024() KEM {
 
 type mlkemKEM struct {
 	id            uint16
-	newPublicKey  func(data []byte) (Encapsulator, error)
-	newPrivateKey func(data []byte) (Decapsulator, error)
-	generateKey   func() (Decapsulator, error)
+	newPublicKey  func(data []byte) (crypto.Encapsulator, error)
+	newPrivateKey func(data []byte) (crypto.Decapsulator, error)
+	generateKey   func() (crypto.Decapsulator, error)
 }
 
 func (kem *mlkemKEM) ID() uint16 {
@@ -395,7 +397,7 @@ func (kem *mlkemKEM) unexported() {}
 
 type mlkemPublicKey struct {
 	kem *mlkemKEM
-	pq  Encapsulator
+	pq  crypto.Encapsulator
 }
 
 // NewMLKEMPublicKey returns a KEMPublicKey implementing
@@ -409,7 +411,7 @@ type mlkemPublicKey struct {
 // This function is meant for applications that already have an instantiated
 // crypto/mlkem public key. Otherwise, applications should use the
 // [KEM.NewPublicKey] method of e.g. [MLKEM768].
-func NewMLKEMPublicKey(pub Encapsulator) (PublicKey, error) {
+func NewMLKEMPublicKey(pub crypto.Encapsulator) (PublicKey, error) {
 	switch pub.(type) {
 	case *mlkem.EncapsulationKey768:
 		return &mlkemPublicKey{mlkem768, pub}, nil
@@ -446,7 +448,7 @@ func (pk *mlkemPublicKey) encap() (sharedSecret []byte, encapPub []byte, err err
 
 type mlkemPrivateKey struct {
 	kem *mlkemKEM
-	pq  Decapsulator
+	pq  crypto.Decapsulator
 }
 
 // NewMLKEMPrivateKey returns a KEMPrivateKey implementing
@@ -454,14 +456,14 @@ type mlkemPrivateKey struct {
 //   - ML-KEM-768
 //   - ML-KEM-1024
 //
-// from draft-ietf-hpke-pq, depending on the type of priv.Encapsulator()
+// from draft-ietf-hpke-pq, depending on the type of priv.crypto.Encapsulator()
 // (either *[mlkem.EncapsulationKey768] or *[mlkem.EncapsulationKey1024]).
 //
 // This function is meant for applications that already have an instantiated
 // crypto/mlkem private key. Otherwise, applications should use the
 // [KEM.NewPrivateKey] method of e.g. [MLKEM768].
-func NewMLKEMPrivateKey(priv Decapsulator) (PrivateKey, error) {
-	switch priv.Encapsulator().(type) {
+func NewMLKEMPrivateKey(priv crypto.Decapsulator) (PrivateKey, error) {
+	switch priv.crypto.Encapsulator().(type) {
 	case *mlkem.EncapsulationKey768:
 		return &mlkemPrivateKey{mlkem768, priv}, nil
 	case *mlkem.EncapsulationKey1024:
@@ -513,7 +515,7 @@ func (k *mlkemPrivateKey) Bytes() ([]byte, error) {
 func (k *mlkemPrivateKey) PublicKey() PublicKey {
 	return &mlkemPublicKey{
 		kem: k.kem,
-		pq:  k.pq.Encapsulator(),
+		pq:  k.pq.crypto.Encapsulator(),
 	}
 }
 
@@ -531,4 +533,18 @@ func (k *mlkemPrivateKey) decap(enc []byte) ([]byte, error) {
 		return nil, errors.New("internal error: unsupported KEM")
 	}
 	return k.pq.Decapsulate(enc)
+}
+
+func wrapDecapsulator(dk any, err error) (crypto.Decapsulator, error) {
+	if err != nil {
+		return nil, err
+	}
+	switch key := dk.(type) {
+	case *mlkem.DecapsulationKey768:
+		return crypto.DecapsulatorFromDecapsulationKey768(key), nil
+	case *mlkem.DecapsulationKey1024:
+		return crypto.DecapsulatorFromDecapsulationKey1024(key), nil
+	default:
+		return nil, errors.New("hpke: internal error: unknown decapsulation key type")
+	}
 }

@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"errors"
+
+	hpkeecdh "filippo.io/hpke/crypto/ecdh"
 )
 
 // A KEM is a Key Encapsulation Mechanism, one of the three components of an
@@ -249,7 +251,7 @@ func (pk *dhKEMPublicKey) encap() (sharedSecret []byte, encapPub []byte, err err
 
 type dhKEMPrivateKey struct {
 	kem  *dhKEM
-	priv KeyExchanger
+	priv hpkeecdh.KeyExchanger
 }
 
 // NewDHKEMPrivateKey returns a PrivateKey implementing
@@ -266,7 +268,7 @@ type dhKEMPrivateKey struct {
 // crypto/ecdh private key, or another implementation of a [KeyExchanger]
 // (e.g. a hardware key). Otherwise, applications should use the
 // [KEM.NewPrivateKey] method of [DHKEM].
-func NewDHKEMPrivateKey(priv KeyExchanger) (PrivateKey, error) {
+func NewDHKEMPrivateKey(priv hpkeecdh.KeyExchanger) (PrivateKey, error) {
 	kem, ok := DHKEM(priv.Curve()).(*dhKEM)
 	if !ok {
 		return nil, errors.New("unsupported curve")

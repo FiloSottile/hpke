@@ -1,13 +1,11 @@
-package hpke
+// Package crypto defines additional interfaces that will be added to the
+// crypto package in Go 1.26+.
+package crypto
 
 import (
 	"crypto/ecdh"
 	"crypto/mlkem"
-	"errors"
 )
-
-// This file can be replaced by a build-tagged set of type aliases and wrappers
-// with go:fix inline once Go 1.26 is ready.
 
 // KeyExchanger is an interface for an opaque private key that can be used for
 // key exchange operations. For example, an ECDH key kept in a hardware module.
@@ -67,18 +65,4 @@ type mlkem1024Decapsulator struct {
 
 func (d *mlkem1024Decapsulator) Encapsulator() Encapsulator {
 	return d.EncapsulationKey()
-}
-
-func wrapDecapsulator(dk any, err error) (Decapsulator, error) {
-	if err != nil {
-		return nil, err
-	}
-	switch key := dk.(type) {
-	case *mlkem.DecapsulationKey768:
-		return DecapsulatorFromDecapsulationKey768(key), nil
-	case *mlkem.DecapsulationKey1024:
-		return DecapsulatorFromDecapsulationKey1024(key), nil
-	default:
-		return nil, errors.New("hpke: internal error: unknown decapsulation key type")
-	}
 }
