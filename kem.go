@@ -37,8 +37,7 @@ type KEM interface {
 	// It implements DeriveKeyPair, as defined in RFC 9180.
 	DeriveKeyPair(ikm []byte) (PrivateKey, error)
 
-	// unexported is a marker method to prevent external implementations.
-	unexported()
+	encSize() int
 }
 
 // NewKEM returns the KEM implementation for the given KEM ID.
@@ -72,6 +71,9 @@ func NewKEM(id uint16) (KEM, error) {
 
 // A PublicKey is an instantiation of a KEM (one of the three components of an
 // HPKE ciphersuite) with an encapsulation key (i.e. the public key).
+//
+// A PublicKey is usually obtained from a method of the corresponding [KEM] or
+// [PrivateKey], such as [KEM.NewPublicKey] or [PrivateKey.PublicKey].
 type PublicKey interface {
 	// KEM returns the instantiated KEM.
 	KEM() KEM
@@ -84,6 +86,9 @@ type PublicKey interface {
 
 // A PrivateKey is an instantiation of a KEM (one of the three components of
 // an HPKE ciphersuite) with a decapsulation key (i.e. the secret key).
+//
+// A PrivateKey is usually obtained from a method of the corresponding [KEM],
+// such as [KEM.GenerateKey] or [KEM.NewPrivateKey].
 type PrivateKey interface {
 	// KEM returns the instantiated KEM.
 	KEM() KEM
@@ -107,6 +112,7 @@ type dhKEM struct {
 	curve   ecdh.Curve
 	Nsecret uint16
 	Nsk     uint16
+	Nenc    int
 }
 
 func (kem *dhKEM) extractAndExpand(dhKey, kemContext []byte) ([]byte, error) {
@@ -125,12 +131,14 @@ func (kem *dhKEM) ID() uint16 {
 	return kem.id
 }
 
-func (kem *dhKEM) unexported() {}
+func (kem *dhKEM) encSize() int {
+	return kem.Nenc
+}
 
-var dhKEMP256 = &dhKEM{HKDFSHA256(), 0x0010, ecdh.P256(), 32, 32}
-var dhKEMP384 = &dhKEM{HKDFSHA384(), 0x0011, ecdh.P384(), 48, 48}
-var dhKEMP521 = &dhKEM{HKDFSHA512(), 0x0012, ecdh.P521(), 64, 66}
-var dhKEMX25519 = &dhKEM{HKDFSHA256(), 0x0020, ecdh.X25519(), 32, 32}
+var dhKEMP256 = &dhKEM{HKDFSHA256(), 0x0010, ecdh.P256(), 32, 32, 65}
+var dhKEMP384 = &dhKEM{HKDFSHA384(), 0x0011, ecdh.P384(), 48, 48, 97}
+var dhKEMP521 = &dhKEM{HKDFSHA512(), 0x0012, ecdh.P521(), 64, 66, 133}
+var dhKEMX25519 = &dhKEM{HKDFSHA256(), 0x0020, ecdh.X25519(), 32, 32, 32}
 
 // DHKEM returns a KEM implementing one of
 //
@@ -175,7 +183,9 @@ func (unsupportedCurveKEM) NewPrivateKey([]byte) (PrivateKey, error) {
 func (unsupportedCurveKEM) DeriveKeyPair([]byte) (PrivateKey, error) {
 	return nil, errors.New("unsupported curve")
 }
-func (unsupportedCurveKEM) unexported() {}
+func (unsupportedCurveKEM) encSize() int {
+	return 0
+}
 
 type dhKEMPublicKey struct {
 	kem *dhKEM

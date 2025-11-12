@@ -17,6 +17,57 @@ import (
 	"testing"
 )
 
+func Example() {
+	// In this example, we use MLKEM768-X25519 as the KEM, HKDF-SHA256 as the
+	// KDF, and AES-256-GCM as the AEAD to encrypt a single message from a
+	// sender to a recipient using the one-shot API.
+
+	kem, kdf, aead := MLKEM768X25519(), HKDFSHA256(), AES256GCM()
+
+	// Recipient side
+	var (
+		recipientPrivateKey PrivateKey
+		publicKeyBytes      []byte
+	)
+	{
+		k, err := kem.GenerateKey()
+		if err != nil {
+			panic(err)
+		}
+		recipientPrivateKey = k
+		publicKeyBytes = k.PublicKey().Bytes()
+	}
+
+	// Sender side
+	var ciphertext []byte
+	{
+		publicKey, err := kem.NewPublicKey(publicKeyBytes)
+		if err != nil {
+			panic(err)
+		}
+
+		message := []byte("|-()-|")
+		ct, err := Seal(publicKey, kdf, aead, []byte("example"), message)
+		if err != nil {
+			panic(err)
+		}
+
+		ciphertext = ct
+	}
+
+	// Recipient side
+	{
+		plaintext, err := Open(recipientPrivateKey, kdf, aead, []byte("example"), ciphertext)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Printf("Decrypted message: %s\n", plaintext)
+	}
+
+	// Output:
+	// Decrypted message: |-()-|
+}
+
 func mustDecodeHex(t *testing.T, in string) []byte {
 	t.Helper()
 	b, err := hex.DecodeString(in)
@@ -82,6 +133,12 @@ func testVectors(t *testing.T, name string) {
 			if vector.KEM == 0x0021 {
 				t.Skip("KEM 0x0021 (DHKEM(X448)) not supported")
 			}
+			if vector.KEM == 0x0040 {
+				t.Skip("KEM 0x0040 (ML-KEM-512) not supported")
+			}
+			if vector.KDF == 0x0012 || vector.KDF == 0x0013 {
+				t.Skipf("TurboSHAKE KDF not supported")
+			}
 
 			kdf, err := NewKDF(vector.KDF)
 			if err != nil {
@@ -126,6 +183,9 @@ func testVectors(t *testing.T, name string) {
 			encap, sender, err := NewSender(kemSender, kdf, aead, info)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if len(encap) != kem.encSize() {
+				t.Errorf("unexpected encapsulated key size: got %d, want %d", len(encap), kem.encSize())
 			}
 
 			expectedEncap := mustDecodeHex(t, vector.Enc)

@@ -116,7 +116,9 @@ func (kem *hybridKEM) ID() uint16 {
 	return kem.id
 }
 
-func (kem *hybridKEM) unexported() {}
+func (kem *hybridKEM) encSize() int {
+	return kem.pqCiphertextSize + kem.curvePointSize
+}
 
 func (kem *hybridKEM) sharedSecret(ssPQ, ssT, ctT, ekT []byte) []byte {
 	h := sha3.New256()
@@ -348,7 +350,8 @@ func (k *hybridPrivateKey) decap(enc []byte) ([]byte, error) {
 }
 
 var mlkem768 = &mlkemKEM{
-	id: 0x0041,
+	id:             0x0041,
+	ciphertextSize: mlkem.CiphertextSize768,
 	newPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey768(data)
 	},
@@ -366,7 +369,8 @@ func MLKEM768() KEM {
 }
 
 var mlkem1024 = &mlkemKEM{
-	id: 0x0042,
+	id:             0x0042,
+	ciphertextSize: mlkem.CiphertextSize1024,
 	newPublicKey: func(data []byte) (crypto.Encapsulator, error) {
 		return mlkem.NewEncapsulationKey1024(data)
 	},
@@ -384,17 +388,20 @@ func MLKEM1024() KEM {
 }
 
 type mlkemKEM struct {
-	id            uint16
-	newPublicKey  func(data []byte) (crypto.Encapsulator, error)
-	newPrivateKey func(data []byte) (crypto.Decapsulator, error)
-	generateKey   func() (crypto.Decapsulator, error)
+	id             uint16
+	ciphertextSize int
+	newPublicKey   func(data []byte) (crypto.Encapsulator, error)
+	newPrivateKey  func(data []byte) (crypto.Decapsulator, error)
+	generateKey    func() (crypto.Decapsulator, error)
 }
 
 func (kem *mlkemKEM) ID() uint16 {
 	return kem.id
 }
 
-func (kem *mlkemKEM) unexported() {}
+func (kem *mlkemKEM) encSize() int {
+	return kem.ciphertextSize
+}
 
 type mlkemPublicKey struct {
 	kem *mlkemKEM
@@ -521,18 +528,6 @@ func (k *mlkemPrivateKey) PublicKey() PublicKey {
 }
 
 func (k *mlkemPrivateKey) decap(enc []byte) ([]byte, error) {
-	switch k.kem {
-	case mlkem768:
-		if len(enc) != mlkem.CiphertextSize768 {
-			return nil, errors.New("invalid encapsulated key size")
-		}
-	case mlkem1024:
-		if len(enc) != mlkem.CiphertextSize1024 {
-			return nil, errors.New("invalid encapsulated key size")
-		}
-	default:
-		return nil, errors.New("internal error: unsupported KEM")
-	}
 	return k.pq.Decapsulate(enc)
 }
 
