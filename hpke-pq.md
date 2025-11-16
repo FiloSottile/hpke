@@ -2,10 +2,10 @@
 
 [filippo.io/hpke-pq](https://filippo.io/hpke-pq)
 
-This document is a simplified and self-contained reference for the
-MLKEM768-X25519, MLKEM768-P256, and MLKEM1024-P384 hybrid HPKE KEMs, matching
-the specification of [draft-ietf-hpke-pq-03][], [draft-irtf-cfrg-hybrid-kems-07][],
-and [draft-irtf-cfrg-concrete-hybrid-kems-02][], and [draft-ietf-hpke-hpke-02].
+This document is a simplified and self-contained implementation reference for
+the MLKEM768-X25519, MLKEM768-P256, and MLKEM1024-P384 hybrid HPKE KEMs,
+specified in [draft-ietf-hpke-pq-03][], [draft-irtf-cfrg-hybrid-kems-07][],
+[draft-irtf-cfrg-concrete-hybrid-kems-02][], and [draft-ietf-hpke-hpke-02].
 
 It compensates for the need to cross-reference four documents, with different
 nomenclature (including functions and components with the same name but
