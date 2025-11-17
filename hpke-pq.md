@@ -15,9 +15,9 @@ frameworks), and multiple KEM abstraction layers.
 ## Conventions used in this document
 
 `||` denotes concatenation. `[N:M]` denotes the byte slice from index N (inclusive)
-to index M (exclusive). Strings quested with `""` are encoded as ASCII. Values
-in code blocks are hex encoded byte strings. `random(N)` denotes N bytes of
-CSPRNG output. All lengths are in bytes.
+to index M (exclusive). Strings quoted with `""` are encoded as ASCII. Values in
+code blocks are hex encoded byte strings. `random(N)` denotes N bytes of CSPRNG
+output. All lengths are in bytes.
 
 ML-KEM.KeyGen_internal, ML-KEM.Encaps, and ML-KEM.Decaps are defined in
 [FIPS 203][]. `SHAKE256(s, L)` is an invocation of `SHAKE256(s, 8*L)` defined in
