@@ -11,6 +11,7 @@ import (
 	"crypto/internal/fips140/drbg"
 	"crypto/internal/rand"
 	"crypto/mlkem"
+	"crypto/mlkem/mlkemtest"
 	"crypto/sha3"
 	"errors"
 	"internal/byteorder"
@@ -183,15 +184,44 @@ func (pk *hybridPublicKey) Bytes() []byte {
 	return append(pk.pq.Bytes(), pk.t.Bytes()...)
 }
 
-var testingOnlyEncapsulate func() (ss, ct []byte)
-
-func (pk *hybridPublicKey) encap() (sharedSecret []byte, encapPub []byte, err error) {
-	skE, err := pk.t.Curve().GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, nil, err
+func (pk *hybridPublicKey) encap(testingRandomness []byte) (ss []byte, enc []byte, err error) {
+	var ssPQ, ctPQ []byte
+	if testingRandomness == nil {
+		ssPQ, ctPQ = pk.pq.Encapsulate()
+	} else {
+		if len(testingRandomness) < 32 {
+			return nil, nil, errors.New("insufficient testing randomness")
+		}
+		switch ek := pk.pq.(type) {
+		case *mlkem.EncapsulationKey768:
+			ssPQ, ctPQ, err = mlkemtest.Encapsulate768(ek, testingRandomness[:32])
+		case *mlkem.EncapsulationKey1024:
+			ssPQ, ctPQ, err = mlkemtest.Encapsulate1024(ek, testingRandomness[:32])
+		default:
+			return nil, nil, errors.New("internal error: unsupported public key type")
+		}
+		if err != nil {
+			return nil, nil, err
+		}
+		testingRandomness = testingRandomness[32:]
 	}
-	if testingOnlyGenerateKey != nil {
-		skE = testingOnlyGenerateKey()
+
+	var skE ecdh.KeyExchanger
+	if testingRandomness == nil {
+		skE, err = pk.t.Curve().GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		for len(testingRandomness) >= pk.kem.curveSeedSize {
+			seedT := testingRandomness[:pk.kem.curveSeedSize]
+			testingRandomness = testingRandomness[pk.kem.curveSeedSize:]
+			skE, err = pk.t.Curve().NewPrivateKey(seedT)
+			if err != nil {
+				continue
+			}
+			break
+		}
 	}
 	ssT, err := skE.ECDH(pk.t)
 	if err != nil {
@@ -199,14 +229,9 @@ func (pk *hybridPublicKey) encap() (sharedSecret []byte, encapPub []byte, err er
 	}
 	ctT := skE.PublicKey().Bytes()
 
-	ssPQ, ctPQ := pk.pq.Encapsulate()
-	if testingOnlyEncapsulate != nil {
-		ssPQ, ctPQ = testingOnlyEncapsulate()
-	}
-
-	ss := pk.kem.sharedSecret(ssPQ, ssT, ctT, pk.t.Bytes())
-	ct := append(ctPQ, ctT...)
-	return ss, ct, nil
+	ss = pk.kem.sharedSecret(ssPQ, ssT, ctT, pk.t.Bytes())
+	enc = append(ctPQ, ctT...)
+	return ss, enc, nil
 }
 
 type hybridPrivateKey struct {
@@ -435,12 +460,19 @@ func (pk *mlkemPublicKey) Bytes() []byte {
 	return pk.pq.Bytes()
 }
 
-func (pk *mlkemPublicKey) encap() (sharedSecret []byte, encapPub []byte, err error) {
-	ss, ct := pk.pq.Encapsulate()
-	if testingOnlyEncapsulate != nil {
-		ss, ct = testingOnlyEncapsulate()
+func (pk *mlkemPublicKey) encap(testingRandomness []byte) (ss []byte, enc []byte, err error) {
+	if testingRandomness != nil {
+		switch ek := pk.pq.(type) {
+		case *mlkem.EncapsulationKey768:
+			return mlkemtest.Encapsulate768(ek, testingRandomness)
+		case *mlkem.EncapsulationKey1024:
+			return mlkemtest.Encapsulate1024(ek, testingRandomness)
+		default:
+			return nil, nil, errors.New("internal error: unsupported public key type")
+		}
 	}
-	return ss, ct, nil
+	ss, enc = pk.pq.Encapsulate()
+	return ss, enc, nil
 }
 
 type mlkemPrivateKey struct {

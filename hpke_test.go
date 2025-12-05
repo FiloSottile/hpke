@@ -7,8 +7,6 @@ package hpke
 import (
 	"bytes"
 	"crypto/ecdh"
-	"crypto/mlkem"
-	"crypto/mlkem/mlkemtest"
 	"crypto/sha3"
 	"encoding/hex"
 	"encoding/json"
@@ -178,10 +176,8 @@ func testVectors(t *testing.T, name string) {
 			}
 
 			ikmE := mustDecodeHex(t, vector.IkmE)
-			setupDerandomizedEncap(t, ikmE, kemSender)
-
 			info := mustDecodeHex(t, vector.Info)
-			encap, sender, err := NewSender(kemSender, kdf, aead, info)
+			encap, sender, err := newSenderWithTestingRandomness(kemSender, ikmE, kdf, aead, info)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -366,96 +362,6 @@ func drawRandomInput(t *testing.T, r io.Reader) []byte {
 		t.Fatal(err)
 	}
 	return b
-}
-
-func setupDerandomizedEncap(t *testing.T, randBytes []byte, pk PublicKey) {
-	t.Cleanup(func() {
-		testingOnlyGenerateKey = nil
-		testingOnlyEncapsulate = nil
-	})
-	switch pk.KEM() {
-	case DHKEM(ecdh.P256()), DHKEM(ecdh.P384()), DHKEM(ecdh.P521()), DHKEM(ecdh.X25519()):
-		r, err := pk.KEM().DeriveKeyPair(randBytes)
-		if err != nil {
-			t.Fatal(err)
-		}
-		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
-			return r.(*dhKEMPrivateKey).priv.(*ecdh.PrivateKey)
-		}
-	case mlkem768:
-		pq := pk.(*mlkemPublicKey).pq.(*mlkem.EncapsulationKey768)
-		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := mlkemtest.Encapsulate768(pq, randBytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return ss, ct
-		}
-	case mlkem1024:
-		pq := pk.(*mlkemPublicKey).pq.(*mlkem.EncapsulationKey1024)
-		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := mlkemtest.Encapsulate1024(pq, randBytes)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return ss, ct
-		}
-	case mlkem768X25519:
-		pqRand, tRand := randBytes[:32], randBytes[32:]
-		pq := pk.(*hybridPublicKey).pq.(*mlkem.EncapsulationKey768)
-		k, err := ecdh.X25519().NewPrivateKey(tRand)
-		if err != nil {
-			t.Fatal(err)
-		}
-		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
-			return k
-		}
-		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := mlkemtest.Encapsulate768(pq, pqRand)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return ss, ct
-		}
-	case mlkem768P256:
-		// The rest of randBytes are the following candidates for rejection
-		// sampling, but they are never reached.
-		pqRand, tRand := randBytes[:32], randBytes[32:64]
-		pq := pk.(*hybridPublicKey).pq.(*mlkem.EncapsulationKey768)
-		k, err := ecdh.P256().NewPrivateKey(tRand)
-		if err != nil {
-			t.Fatal(err)
-		}
-		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
-			return k
-		}
-		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := mlkemtest.Encapsulate768(pq, pqRand)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return ss, ct
-		}
-	case mlkem1024P384:
-		pqRand, tRand := randBytes[:32], randBytes[32:]
-		pq := pk.(*hybridPublicKey).pq.(*mlkem.EncapsulationKey1024)
-		k, err := ecdh.P384().NewPrivateKey(tRand)
-		if err != nil {
-			t.Fatal(err)
-		}
-		testingOnlyGenerateKey = func() *ecdh.PrivateKey {
-			return k
-		}
-		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := mlkemtest.Encapsulate1024(pq, pqRand)
-			if err != nil {
-				t.Fatal(err)
-			}
-			return ss, ct
-		}
-	default:
-		t.Fatalf("unsupported KEM %04x", pk.KEM().ID())
-	}
 }
 
 func TestSingletons(t *testing.T) {

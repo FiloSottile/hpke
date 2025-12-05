@@ -79,7 +79,10 @@ type PublicKey interface {
 	// Bytes returns the public key as the output of SerializePublicKey.
 	Bytes() []byte
 
-	encap() (sharedSecret, enc []byte, err error)
+	// encap performs KEM encapsulation, producing a shared secret and
+	// ciphertext (i.e. the encapsulated key). The testingRandomness parameter,
+	// if not nil, is used to perform deterministic encapsulation for testing.
+	encap(testingRandomness []byte) (sharedSecret, enc []byte, err error)
 }
 
 // A PrivateKey is an instantiation of a KEM (one of the three components of
@@ -227,17 +230,19 @@ func (pk *dhKEMPublicKey) Bytes() []byte {
 	return pk.pub.Bytes()
 }
 
-// testingOnlyGenerateKey is only used during testing, to provide
-// a fixed test key to use when checking the RFC 9180 vectors.
-var testingOnlyGenerateKey func() *ecdh.PrivateKey
-
-func (pk *dhKEMPublicKey) encap() (sharedSecret []byte, encapPub []byte, err error) {
-	privEph, err := pk.pub.Curve().GenerateKey(rand.Reader)
-	if err != nil {
-		return nil, nil, err
-	}
-	if testingOnlyGenerateKey != nil {
-		privEph = testingOnlyGenerateKey()
+func (pk *dhKEMPublicKey) encap(testingRandomness []byte) (ss []byte, enc []byte, err error) {
+	var privEph ecdh.KeyExchanger
+	if testingRandomness == nil {
+		privEph, err = pk.pub.Curve().GenerateKey(rand.Reader)
+		if err != nil {
+			return nil, nil, err
+		}
+	} else {
+		r, err := pk.KEM().DeriveKeyPair(testingRandomness)
+		if err != nil {
+			return nil, nil, err
+		}
+		privEph = r.(*dhKEMPrivateKey).priv
 	}
 	dhVal, err := privEph.ECDH(pk.pub)
 	if err != nil {
@@ -247,11 +252,11 @@ func (pk *dhKEMPublicKey) encap() (sharedSecret []byte, encapPub []byte, err err
 
 	encPubRecip := pk.pub.Bytes()
 	kemContext := append(encPubEph, encPubRecip...)
-	sharedSecret, err = pk.kem.extractAndExpand(dhVal, kemContext)
+	ss, err = pk.kem.extractAndExpand(dhVal, kemContext)
 	if err != nil {
 		return nil, nil, err
 	}
-	return sharedSecret, encPubEph, nil
+	return ss, encPubEph, nil
 }
 
 type dhKEMPrivateKey struct {
