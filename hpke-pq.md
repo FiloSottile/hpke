@@ -19,9 +19,9 @@ to index M (exclusive). Strings quoted with `""` are encoded as ASCII. Values in
 code blocks are hex encoded byte strings. `random(N)` denotes N bytes of CSPRNG
 output. All lengths are in bytes.
 
-ML-KEM.KeyGen_internal, ML-KEM.Encaps, and ML-KEM.Decaps are defined in
-[FIPS 203][]. `SHAKE256(s, L)` is an invocation of `SHAKE256(s, 8*L)` defined in
-[FIPS 202][]. SHA3-256 is defined in [FIPS 202][].
+ML-KEM.KeyGen_internal, ML-KEM.Encaps, ML-KEM.Encaps_internal, and ML-KEM.Decaps
+are defined in [FIPS 203][]. `SHAKE256(s, L)` is an invocation of `SHAKE256(s, 8*L)`
+defined in [FIPS 202][]. SHA3-256 is defined in [FIPS 202][].
 
 ## KEM definitions
 
@@ -34,10 +34,12 @@ ML-KEM.KeyGen_internal, ML-KEM.Encaps, and ML-KEM.Decaps are defined in
 | Nenc              | 1120               | 1153               | 1665               |
 | Npk               | 1216               | 1249               | 1665               |
 | Nsk               | 32                 | 32                 | 32                 |
+| Nrandom           | 96                 | 160                | 80                 |
 | Label             | `"\.//^\"`         | `"MLKEM768-P256"`  | `"MLKEM1024-P384"` |
 | KEM.Nct           | 1088               | 1088               | 1568               |
 | KEM.Nek           | 1184               | 1184               | 1568               |    
 | KEM.Nseed         | 64                 | 64                 | 64                 |
+| KEM.Nrandom       | 32                 | 32                 | 32                 |
 | Group.Nelem       | 32                 | 65                 | 97                 |
 | Group.Nseed       | 32                 | 128                | 48                 |
 | Group.Nscalar     | N/A                | 32                 | 48                 |
@@ -50,7 +52,7 @@ The MLKEM768-X25519 Label is alternatively encoded as
 
 ```
 def GenerateKeyPair():
-    seed = random(32)
+    seed = random(Nsk)
 
     ek_PQ, ek_T, _, _ = expandKey(seed)
     ek = ek_PQ || ek_T
@@ -61,7 +63,7 @@ def DeriveKeyPair(ikm):
     # SHAKE256.LabeledDerive is part of the single-stage KDF described in
     # draft-ietf-hpke-hpke-02 and defined in draft-ietf-hpke-pq-03, but is
     # reproduced below for convenience.
-    seed = SHAKE256.LabeledDerive(ikm, "DeriveKeyPair", "", 32)
+    seed = SHAKE256.LabeledDerive(ikm, "DeriveKeyPair", "", Nsk)
 
     ek_PQ, ek_T, _, _ = expandKey(seed)
     ek = ek_PQ || ek_T
@@ -129,6 +131,31 @@ def PrivateKeyToPublicKey(seed):
     return ek
 ```
 
+### Deterministic Encapsulation
+
+For testing purposes, implementations can provide Nrandom bytes of encapsulation
+randomness to the deterministic internal function `EncapsDerand`.
+
+```
+def EncapsDerand(ek, randomness):
+    ek_PQ = ek[0 : KEM.Nek]
+    ek_T = ek[KEM.Nek : KEM.Nek + Group.Nelem]
+
+    randomness_PQ = randomness[0 : KEM.Nrandom]
+    randomness_T = randomness[KEM.Nrandom : KEM.Nrandom + Group.Nseed]
+
+    ss_PQ, ct_PQ = ML-KEM.Encaps_internal(ek_PQ, randomness_PQ)
+
+    sk_E = Group.RandomScalar(randomness_T)
+    ct_T = Group.Exp(Group.G, sk_E)
+    ss_T = Group.ElementToSharedSecret(Group.Exp(ek_T, sk_E))
+
+    ss = SHA3-256(ss_PQ || ss_T || ct_T || ek_T || Label)
+    ct = ct_PQ || ct_T
+
+    return (ss, ct)
+```
+
 ## Group definitions
 
 ### Curve25519
@@ -168,7 +195,7 @@ for P-256, and to
 for P-384, consistently with [SP800-186][], Section 3.2.1.
 
 ```
-def RandomScalar(seed):
+def Group.RandomScalar(seed):
     start = 0
     end = Nscalar
     sk = seed[start : end]
