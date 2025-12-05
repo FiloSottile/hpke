@@ -6,15 +6,14 @@ package hpke
 
 import (
 	"bytes"
-	"crypto/ecdh"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha3"
-	"encoding/binary"
 	"errors"
 
 	"filippo.io/hpke/crypto"
-	hpkeecdh "filippo.io/hpke/crypto/ecdh"
+	"filippo.io/hpke/crypto/ecdh"
+	"filippo.io/hpke/internal/byteorder"
 )
 
 var mlkem768X25519 = &hybridKEM{
@@ -33,9 +32,6 @@ var mlkem768X25519 = &hybridKEM{
 	},
 	pqNewPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey768(data))
-	},
-	pqGenerateKey: func() (crypto.Decapsulator, error) {
-		return wrapDecapsulator(mlkem.GenerateKey768())
 	},
 }
 
@@ -61,9 +57,6 @@ var mlkem768P256 = &hybridKEM{
 	pqNewPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey768(data))
 	},
-	pqGenerateKey: func() (crypto.Decapsulator, error) {
-		return wrapDecapsulator(mlkem.GenerateKey768())
-	},
 }
 
 // MLKEM768P256 returns a KEM implementing MLKEM768-P256 from draft-ietf-hpke-pq.
@@ -87,9 +80,6 @@ var mlkem1024P384 = &hybridKEM{
 	pqNewPrivateKey: func(data []byte) (crypto.Decapsulator, error) {
 		return wrapDecapsulator(mlkem.NewDecapsulationKey1024(data))
 	},
-	pqGenerateKey: func() (crypto.Decapsulator, error) {
-		return wrapDecapsulator(mlkem.GenerateKey1024())
-	},
 }
 
 // MLKEM1024P384 returns a KEM implementing MLKEM1024-P384 from draft-ietf-hpke-pq.
@@ -109,7 +99,6 @@ type hybridKEM struct {
 
 	pqNewPublicKey  func(data []byte) (crypto.Encapsulator, error)
 	pqNewPrivateKey func(data []byte) (crypto.Decapsulator, error)
-	pqGenerateKey   func() (crypto.Decapsulator, error)
 }
 
 func (kem *hybridKEM) ID() uint16 {
@@ -149,7 +138,7 @@ type hybridPublicKey struct {
 // This function is meant for applications that already have instantiated
 // crypto/ecdh and crypto/mlkem public keys. Otherwise, applications should use
 // the [KEM.NewPublicKey] method of e.g. [MLKEM768X25519].
-func NewHybridPublicKey(t *ecdh.PublicKey, pq crypto.Encapsulator) (PublicKey, error) {
+func NewHybridPublicKey(pq crypto.Encapsulator, t *ecdh.PublicKey) (PublicKey, error) {
 	switch t.Curve() {
 	case ecdh.X25519():
 		if _, ok := pq.(*mlkem.EncapsulationKey768); !ok {
@@ -183,7 +172,7 @@ func (kem *hybridKEM) NewPublicKey(data []byte) (PublicKey, error) {
 	if err != nil {
 		return nil, err
 	}
-	return NewHybridPublicKey(k, pq)
+	return NewHybridPublicKey(pq, k)
 }
 
 func (pk *hybridPublicKey) KEM() KEM {
@@ -223,7 +212,7 @@ func (pk *hybridPublicKey) encap() (sharedSecret []byte, encapPub []byte, err er
 type hybridPrivateKey struct {
 	kem  *hybridKEM
 	seed []byte // can be nil
-	t    hpkeecdh.KeyExchanger
+	t    ecdh.KeyExchanger
 	pq   crypto.Decapsulator
 }
 
@@ -239,11 +228,11 @@ type hybridPrivateKey struct {
 //
 // This function is meant for applications that already have instantiated
 // crypto/ecdh and crypto/mlkem private keys, or another implementation of a
-// [hpkeecdh.KeyExchanger] and [crypto.Decapsulator] (e.g. a hardware key).
+// [ecdh.KeyExchanger] and [crypto.Decapsulator] (e.g. a hardware key).
 // Otherwise, applications should use the [KEM.NewPrivateKey] method of e.g.
 // [MLKEM768X25519].
-func NewHybridPrivateKey(t hpkeecdh.KeyExchanger, pq crypto.Decapsulator) (PrivateKey, error) {
-	return newHybridPrivateKey(t, pq, nil)
+func NewHybridPrivateKey(pq crypto.Decapsulator, t ecdh.KeyExchanger) (PrivateKey, error) {
+	return newHybridPrivateKey(pq, t, nil)
 }
 
 func (kem *hybridKEM) GenerateKey() (PrivateKey, error) {
@@ -274,11 +263,11 @@ func (kem *hybridKEM) NewPrivateKey(priv []byte) (PrivateKey, error) {
 		if err != nil {
 			continue
 		}
-		return newHybridPrivateKey(k, pq, priv)
+		return newHybridPrivateKey(pq, k, priv)
 	}
 }
 
-func newHybridPrivateKey(t hpkeecdh.KeyExchanger, pq crypto.Decapsulator, seed []byte) (PrivateKey, error) {
+func newHybridPrivateKey(pq crypto.Decapsulator, t ecdh.KeyExchanger, seed []byte) (PrivateKey, error) {
 	switch t.Curve() {
 	case ecdh.X25519():
 		if _, ok := pq.Encapsulator().(*mlkem.EncapsulationKey768); !ok {
@@ -301,7 +290,7 @@ func newHybridPrivateKey(t hpkeecdh.KeyExchanger, pq crypto.Decapsulator, seed [
 }
 
 func (kem *hybridKEM) DeriveKeyPair(ikm []byte) (PrivateKey, error) {
-	suiteID := binary.BigEndian.AppendUint16([]byte("KEM"), kem.id)
+	suiteID := byteorder.BEAppendUint16([]byte("KEM"), kem.id)
 	dk, err := SHAKE256().labeledDerive(suiteID, ikm, "DeriveKeyPair", nil, 32)
 	if err != nil {
 		return nil, err
@@ -498,7 +487,7 @@ func (kem *mlkemKEM) NewPrivateKey(priv []byte) (PrivateKey, error) {
 }
 
 func (kem *mlkemKEM) DeriveKeyPair(ikm []byte) (PrivateKey, error) {
-	suiteID := binary.BigEndian.AppendUint16([]byte("KEM"), kem.id)
+	suiteID := byteorder.BEAppendUint16([]byte("KEM"), kem.id)
 	dk, err := SHAKE256().labeledDerive(suiteID, ikm, "DeriveKeyPair", nil, 64)
 	if err != nil {
 		return nil, err

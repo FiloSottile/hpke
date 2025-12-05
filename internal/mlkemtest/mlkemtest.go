@@ -1,6 +1,6 @@
 //go:build !go1.26 && !fips140v1.0
 
-package hpke
+package mlkemtest
 
 import (
 	"crypto/mlkem"
@@ -14,7 +14,7 @@ import (
 // Amongst probably other things, this breaks with GOFIPS140 due to the renamed
 // symbols.
 
-func MLKEMEncapsulate768(ek *mlkem.EncapsulationKey768, rand []byte) (sharedKey, ciphertext []byte, err error) {
+func Encapsulate768(ek *mlkem.EncapsulationKey768, rand []byte) (sharedKey, ciphertext []byte, err error) {
 	if len(rand) != 32 {
 		return nil, nil, errors.New("invalid ML-KEM-768 randomness size")
 	}
@@ -30,7 +30,7 @@ type mlkem768EncapsulationKey struct {
 //go:linkname mlkem768EncapsulateInternal crypto/internal/fips140/mlkem.(*EncapsulationKey768).EncapsulateInternal
 func mlkem768EncapsulateInternal(ek unsafe.Pointer, m *[32]byte) (sharedKey, ciphertext []byte)
 
-func MLKEMEncapsulate1024(ek *mlkem.EncapsulationKey1024, rand []byte) (sharedKey, ciphertext []byte, err error) {
+func Encapsulate1024(ek *mlkem.EncapsulationKey1024, rand []byte) (sharedKey, ciphertext []byte, err error) {
 	if len(rand) != 32 {
 		return nil, nil, errors.New("invalid ML-KEM-1024 randomness size")
 	}

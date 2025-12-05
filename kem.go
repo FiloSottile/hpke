@@ -5,12 +5,11 @@
 package hpke
 
 import (
-	"crypto/ecdh"
 	"crypto/rand"
-	"encoding/binary"
 	"errors"
 
-	hpkeecdh "filippo.io/hpke/crypto/ecdh"
+	"filippo.io/hpke/crypto/ecdh"
+	"filippo.io/hpke/internal/byteorder"
 )
 
 // A KEM is a Key Encapsulation Mechanism, one of the three components of an
@@ -116,10 +115,7 @@ type dhKEM struct {
 }
 
 func (kem *dhKEM) extractAndExpand(dhKey, kemContext []byte) ([]byte, error) {
-	suiteID := binary.BigEndian.AppendUint16([]byte("KEM"), kem.id)
-	if kem.kdf.oneStage() {
-		return kem.kdf.labeledDerive(suiteID, dhKey, "shared_secret", kemContext, kem.Nsecret)
-	}
+	suiteID := byteorder.BEAppendUint16([]byte("KEM"), kem.id)
 	eaePRK, err := kem.kdf.labeledExtract(suiteID, nil, "eae_prk", dhKey)
 	if err != nil {
 		return nil, err
@@ -261,7 +257,7 @@ func (pk *dhKEMPublicKey) encap() (sharedSecret []byte, encapPub []byte, err err
 
 type dhKEMPrivateKey struct {
 	kem  *dhKEM
-	priv hpkeecdh.KeyExchanger
+	priv ecdh.KeyExchanger
 }
 
 // NewDHKEMPrivateKey returns a PrivateKey implementing
@@ -275,10 +271,10 @@ type dhKEMPrivateKey struct {
 // [ecdh.P384], or [ecdh.P521]).
 //
 // This function is meant for applications that already have an instantiated
-// crypto/ecdh private key, or another implementation of a [KeyExchanger]
+// crypto/ecdh private key, or another implementation of a [ecdh.KeyExchanger]
 // (e.g. a hardware key). Otherwise, applications should use the
 // [KEM.NewPrivateKey] method of [DHKEM].
-func NewDHKEMPrivateKey(priv hpkeecdh.KeyExchanger) (PrivateKey, error) {
+func NewDHKEMPrivateKey(priv ecdh.KeyExchanger) (PrivateKey, error) {
 	kem, ok := DHKEM(priv.Curve()).(*dhKEM)
 	if !ok {
 		return nil, errors.New("unsupported curve")
@@ -307,43 +303,23 @@ func (kem *dhKEM) NewPrivateKey(ikm []byte) (PrivateKey, error) {
 
 func (kem *dhKEM) DeriveKeyPair(ikm []byte) (PrivateKey, error) {
 	// DeriveKeyPair from RFC 9180 Section 7.1.3.
-	suiteID := binary.BigEndian.AppendUint16([]byte("KEM"), kem.id)
-	prk := ikm
-	var err error
-	if !kem.kdf.oneStage() {
-		prk, err = kem.kdf.labeledExtract(suiteID, nil, "dkp_prk", ikm)
-		if err != nil {
-			return nil, err
-		}
+	suiteID := byteorder.BEAppendUint16([]byte("KEM"), kem.id)
+	prk, err := kem.kdf.labeledExtract(suiteID, nil, "dkp_prk", ikm)
+	if err != nil {
+		return nil, err
 	}
 	if kem == dhKEMX25519 {
-		var s []byte
-		if kem.kdf.oneStage() {
-			s, err = kem.kdf.labeledDerive(suiteID, prk, "sk", nil, kem.Nsk)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			s, err = kem.kdf.labeledExpand(suiteID, prk, "sk", nil, kem.Nsk)
-			if err != nil {
-				return nil, err
-			}
+		s, err := kem.kdf.labeledExpand(suiteID, prk, "sk", nil, kem.Nsk)
+		if err != nil {
+			return nil, err
 		}
 		return kem.NewPrivateKey(s)
 	}
 	var counter uint8
 	for counter < 4 {
-		var s []byte
-		if kem.kdf.oneStage() {
-			s, err = kem.kdf.labeledDerive(suiteID, prk, "candidate", []byte{counter}, kem.Nsk)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			s, err = kem.kdf.labeledExpand(suiteID, prk, "candidate", []byte{counter}, kem.Nsk)
-			if err != nil {
-				return nil, err
-			}
+		s, err := kem.kdf.labeledExpand(suiteID, prk, "candidate", []byte{counter}, kem.Nsk)
+		if err != nil {
+			return nil, err
 		}
 		if kem == dhKEMP521 {
 			s[0] &= 0x01

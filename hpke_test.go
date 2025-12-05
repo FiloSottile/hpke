@@ -15,6 +15,8 @@ import (
 	"io"
 	"os"
 	"testing"
+
+	"filippo.io/hpke/internal/mlkemtest"
 )
 
 func Example() {
@@ -384,7 +386,7 @@ func setupDerandomizedEncap(t *testing.T, randBytes []byte, pk PublicKey) {
 	case mlkem768:
 		pq := pk.(*mlkemPublicKey).pq.(*mlkem.EncapsulationKey768)
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := MLKEMEncapsulate768(pq, randBytes)
+			ss, ct, err := mlkemtest.Encapsulate768(pq, randBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -393,7 +395,7 @@ func setupDerandomizedEncap(t *testing.T, randBytes []byte, pk PublicKey) {
 	case mlkem1024:
 		pq := pk.(*mlkemPublicKey).pq.(*mlkem.EncapsulationKey1024)
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := MLKEMEncapsulate1024(pq, randBytes)
+			ss, ct, err := mlkemtest.Encapsulate1024(pq, randBytes)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -410,7 +412,7 @@ func setupDerandomizedEncap(t *testing.T, randBytes []byte, pk PublicKey) {
 			return k
 		}
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := MLKEMEncapsulate768(pq, pqRand)
+			ss, ct, err := mlkemtest.Encapsulate768(pq, pqRand)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -429,7 +431,7 @@ func setupDerandomizedEncap(t *testing.T, randBytes []byte, pk PublicKey) {
 			return k
 		}
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := MLKEMEncapsulate768(pq, pqRand)
+			ss, ct, err := mlkemtest.Encapsulate768(pq, pqRand)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -446,7 +448,7 @@ func setupDerandomizedEncap(t *testing.T, randBytes []byte, pk PublicKey) {
 			return k
 		}
 		testingOnlyEncapsulate = func() ([]byte, []byte) {
-			ss, ct, err := MLKEMEncapsulate1024(pq, pqRand)
+			ss, ct, err := mlkemtest.Encapsulate1024(pq, pqRand)
 			if err != nil {
 				t.Fatal(err)
 			}
