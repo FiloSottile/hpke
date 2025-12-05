@@ -134,7 +134,14 @@ func newContext(sharedSecret []byte, kemID uint16, kdf KDF, aead AEAD, info []by
 // The returned enc ciphertext can be used to instantiate a matching receiving
 // HPKE context with the corresponding KEM decapsulation key.
 func NewSender(pk PublicKey, kdf KDF, aead AEAD, info []byte) (enc []byte, s *Sender, err error) {
-	sharedSecret, encapsulatedKey, err := pk.encap()
+	return NewSenderWithTestingRandomness(pk, nil, kdf, aead, info)
+}
+
+// NewSenderWithTestingRandomness is like NewSender, but uses the provided
+// testingRandomness for deterministic KEM encapsulation. This is only intended
+// for use in tests with known-answer test vectors.
+func NewSenderWithTestingRandomness(pk PublicKey, testingRandomness []byte, kdf KDF, aead AEAD, info []byte) (enc []byte, s *Sender, err error) {
+	sharedSecret, encapsulatedKey, err := pk.encap(testingRandomness)
 	if err != nil {
 		return nil, nil, err
 	}

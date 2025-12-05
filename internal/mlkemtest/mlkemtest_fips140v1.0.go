@@ -1,4 +1,4 @@
-//go:build !go1.26 && !fips140v1.0
+//go:build !go1.26 && fips140v1.0
 
 package mlkemtest
 
@@ -21,10 +21,10 @@ func Encapsulate768(ek *mlkem.EncapsulationKey768, rand []byte) (sharedKey, ciph
 }
 
 type mlkem768EncapsulationKey struct {
-	key unsafe.Pointer // *crypto/internal/fips140/mlkem.EncapsulationKey768
+	key unsafe.Pointer // *crypto/internal/fips140/v1.0.0-c2097c7c/mlkem.EncapsulationKey768
 }
 
-//go:linkname mlkem768EncapsulateInternal crypto/internal/fips140/mlkem.(*EncapsulationKey768).EncapsulateInternal
+//go:linkname mlkem768EncapsulateInternal crypto/internal/fips140/v1.0.0-c2097c7c/mlkem.(*EncapsulationKey768).EncapsulateInternal
 func mlkem768EncapsulateInternal(ek unsafe.Pointer, m *[32]byte) (sharedKey, ciphertext []byte)
 
 func Encapsulate1024(ek *mlkem.EncapsulationKey1024, rand []byte) (sharedKey, ciphertext []byte, err error) {
@@ -37,8 +37,8 @@ func Encapsulate1024(ek *mlkem.EncapsulationKey1024, rand []byte) (sharedKey, ci
 }
 
 type mlkem1024EncapsulationKey struct {
-	key unsafe.Pointer // *crypto/internal/fips140/mlkem.EncapsulationKey1024
+	key unsafe.Pointer // *crypto/internal/fips140/v1.0.0-c2097c7c/mlkem.EncapsulationKey1024
 }
 
-//go:linkname mlkem1024EncapsulateInternal crypto/internal/fips140/mlkem.(*EncapsulationKey1024).EncapsulateInternal
+//go:linkname mlkem1024EncapsulateInternal crypto/internal/fips140/v1.0.0-c2097c7c/mlkem.(*EncapsulationKey1024).EncapsulateInternal
 func mlkem1024EncapsulateInternal(ek unsafe.Pointer, m *[32]byte) (sharedKey, ciphertext []byte)
