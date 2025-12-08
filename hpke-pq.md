@@ -34,7 +34,7 @@ defined in [FIPS 202][]. SHA3-256 is defined in [FIPS 202][].
 | Nenc              | 1120               | 1153               | 1665               |
 | Npk               | 1216               | 1249               | 1665               |
 | Nsk               | 32                 | 32                 | 32                 |
-| Nrandom           | 96                 | 160                | 80                 |
+| Nrandom           | 64                 | 160                | 80                 |
 | Label             | `"\.//^\"`         | `"MLKEM768-P256"`  | `"MLKEM1024-P384"` |
 | KEM.Nct           | 1088               | 1088               | 1568               |
 | KEM.Nek           | 1184               | 1184               | 1568               |    
