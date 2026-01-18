@@ -7,6 +7,7 @@ package hpke
 import (
 	"crypto/rand"
 	"errors"
+	"slices"
 
 	"filippo.io/hpke/crypto/ecdh"
 	"filippo.io/hpke/internal/byteorder"
@@ -383,6 +384,6 @@ func (k *dhKEMPrivateKey) decap(encPubEph []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	kemContext := append(encPubEph, k.priv.PublicKey().Bytes()...)
+	kemContext := append(slices.Clip(encPubEph), k.priv.PublicKey().Bytes()...)
 	return k.kem.extractAndExpand(dhVal, kemContext)
 }
