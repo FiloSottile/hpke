@@ -414,3 +414,22 @@ func TestSingletons(t *testing.T) {
 		t.Error("MLKEM1024P384() != MLKEM1024P384()")
 	}
 }
+
+func TestSingleUseOpen(t *testing.T) {
+	kem, kdf, aead := DHKEM(ecdh.X25519()), HKDFSHA256(), ChaCha20Poly1305()
+
+	k, _ := kem.GenerateKey()
+	pk := k.PublicKey()
+
+	plaintext := []byte("hello world")
+	encANDcipher, _ := Seal(pk, kdf, aead, nil, plaintext)
+	decrypted, err := Open(k, kdf, aead, nil, encANDcipher)
+
+	if err != nil {
+		t.Errorf("single-use Open failed: %s", err.Error())
+	}
+
+	if !bytes.Equal(plaintext, decrypted) {
+		t.Error("plaintext != decrypted")
+	}
+}

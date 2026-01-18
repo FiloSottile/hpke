@@ -235,7 +235,7 @@ func Open(k PrivateKey, kdf KDF, aead AEAD, info, ciphertext []byte) ([]byte, er
 		return nil, errors.New("ciphertext too short")
 	}
 	enc, ciphertext := ciphertext[:encSize], ciphertext[encSize:]
-	r, err := NewRecipient(enc, k, kdf, aead, info)
+	r, err := NewRecipient(append([]byte(nil), enc...), k, kdf, aead, info)
 	if err != nil {
 		return nil, err
 	}
